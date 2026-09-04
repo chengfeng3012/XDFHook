@@ -1,0 +1,78 @@
+name: Build & Release
+
+# 触发时机：
+#   1. 推送形如 v1.0.10 的 tag （版本号 x.y.z，z 对应 Android versionCode 的个位扩展）
+#   2. 手动触发（workflow_dispatch）
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+
+# 关键：默认 GITHUB_TOKEN 只有 contents:read，
+# 必须显式授予 contents:write 才能创建 Release 并上传 APK asset。
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept SDK licenses & install needed components
+        run: |
+          yes | sdkmanager --licenses >/dev/null 2>&1 || true
+          sdkmanager "platforms;android-30" "build-tools;30.0.3" >/dev/null 2>&1 || echo "sdkmanager done (best-effort)"
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # gradle.properties 里 aapt2FromMavenOverride 指向的是作者真机本地路径
+      # (/opt/android-sdk/build-tools/34.0.0/aapt2)，GitHub Runner 上没有。
+      # AGP 在首次构建会自动从 maven 下载匹配的 aapt2，故 CI 里临时注释该行。
+      - name: Neutralize local aapt2 override for CI
+        run: |
+          sed -i 's|^android.aapt2FromMavenOverride=|#android.aapt2FromMavenOverride=|' gradle.properties
+          echo "--- gradle.properties after neutralization ---"
+          cat gradle.properties
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xdfhook-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Tag name for release
+        id: tag
+        run: echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: XDFHook ${{ steps.tag.outputs.tag }}
+          body: |
+            ## XDFHook ${{ steps.tag.outputs.tag }}
+
+            自动构建于 GitHub Actions。
+
+            > 点击下方 APK 附件下载安装（Debug 签名，可直接安装）。
+            > 安装后需在 LSPosed 启用模块并勾选作用域。
+          files: app/build/outputs/apk/debug/app-debug.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

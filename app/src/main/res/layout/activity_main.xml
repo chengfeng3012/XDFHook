@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 竖屏：内容 + 底部导航栏 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@color/bg_page">
+
+    <FrameLayout
+        android:id="@+id/page_container"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1px"
+        android:background="@color/divider" />
+
+    <LinearLayout
+        android:id="@+id/nav_bar"
+        android:layout_width="match_parent"
+        android:layout_height="58dp"
+        android:orientation="horizontal"
+        android:background="@color/card_bg">
+
+        <LinearLayout android:id="@+id/tab_0" style="@style/NavTab">
+            <ImageView android:id="@+id/tab_icon_0" style="@style/NavIcon" android:src="@drawable/ic_tab_overview" android:contentDescription="@string/tab_overview" />
+            <TextView android:id="@+id/tab_text_0" style="@style/NavText" android:text="@string/tab_overview" />
+        </LinearLayout>
+
+        <LinearLayout android:id="@+id/tab_1" style="@style/NavTab">
+            <ImageView android:id="@+id/tab_icon_1" style="@style/NavIcon" android:src="@drawable/ic_tab_logs" android:contentDescription="@string/tab_logs" />
+            <TextView android:id="@+id/tab_text_1" style="@style/NavText" android:text="@string/tab_logs" />
+        </LinearLayout>
+
+        <LinearLayout android:id="@+id/tab_2" style="@style/NavTab">
+            <ImageView android:id="@+id/tab_icon_2" style="@style/NavIcon" android:src="@drawable/ic_tab_operation" android:contentDescription="@string/tab_operation" />
+            <TextView android:id="@+id/tab_text_2" style="@style/NavText" android:text="@string/tab_operation" />
+        </LinearLayout>
+
+        <LinearLayout android:id="@+id/tab_3" style="@style/NavTab">
+            <ImageView android:id="@+id/tab_icon_3" style="@style/NavIcon" android:src="@drawable/ic_tab_settings" android:contentDescription="@string/tab_settings" />
+            <TextView android:id="@+id/tab_text_3" style="@style/NavText" android:text="@string/tab_settings" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

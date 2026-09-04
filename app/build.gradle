@@ -1,0 +1,76 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'cn.cf3012.xdf'
+    compileSdk 30
+
+    defaultConfig {
+        applicationId "cn.cf3012.xdf"
+        // 26 = libxposed service aar 的 minSdk（学习机目标设备 Android 10，无影响）
+        minSdk 26
+        // 设备 XDF-N1 为 Android 10 (API 29)，targetSdk 与 OS 一致，零 compat 层
+        targetSdk 29
+        versionCode 10
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        // 升到 17：AGP 依据它决定依赖 dexing 是否启用 global synthetics——
+        // 1.8 时 enableGlobalSynthetics=false，service aar 的 record 类
+        // desugaring 无 consumer 直接报错；17 下该开关自动打开
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+        // HotReloadResult（service aar 的 record）编译期引用 java.lang.Record，
+        // compileSdk 30 的 android.jar 没有 —— 必须 core library desugaring 提供桩
+        coreLibraryDesugaringEnabled true
+    }
+}
+
+dependencies {
+    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.5'
+    // LibXposed 新 API 102 (io.github.libxposed:api)，运行时代码由 LSPosed 框架提供
+    compileOnly files('libs/api-102.0.0.jar')
+    // api 类注解（@NonNull 等），仅编译期需要
+    compileOnly 'androidx.annotation:annotation:1.6.0'
+
+    // LibXposed 官方跨进程通道 (io.github.libxposed:service)：
+    //   - XposedServiceHelper：LSPosed daemon 经自带 XposedProvider(ContentProvider)
+    //     把 service binder 注入模块 app 进程（需打进 APK，必须 implementation）
+    //   - XposedService：getRemotePreferences / openRemoteFile / getRunningTargets /
+    //     getScope / deleteRemoteFile 等，与 hook 侧共享同一份 daemon 托管存储
+    // 注意：上游 aar 声明 minCompileSdk=37 / minSdk=26，其字节码含 record 类型
+    //   (HotReloadResult)，用 maven 坐标依赖（而非 files()）以走正常 desugar 路径；
+    //   aar metadata 检查关闭（compileSdk 30 对我们引用的 API 完全够用）
+    // LibXposed 官方跨进程通道 (io.github.libxposed:service:102.0.0)：
+    //   - XposedServiceHelper：LSPosed daemon 经 aar 自带 XposedProvider(ContentProvider)
+    //     把 service binder 注入模块 app 进程（需打进 APK，必须 implementation）
+    //   - XposedService：getRemotePreferences / openRemoteFile / getRunningTargets /
+    //     getScope / deleteRemoteFile，与 hook 侧共享同一份 daemon 托管存储
+    //
+    // 注意 libs/service-102.0.0-nometa.aar 的来历（官方 102.0.0 原样字节码）：
+    //   1. 删除 META-INF/com/android/build/gradle/aar-metadata.properties
+    //      （上游声明 minCompileSdk=37，本工程 compileSdk 30 实际够用）；
+    //   2. 其余文件未动。生成命令：
+    //      unzip aar → rm aar-metadata.properties → zip 打回
+    //   配合 compileOptions Java 17（AGP 据此为依赖 dexing 启用 global
+    //   synthetics，否则 record 类报 "Record desugaring without a
+    //   global-synthetics consumer"）。上游修复 minCompileSdk / 我们升
+    //   compileSdk 后可换回官方 maven 坐标 io.github.libxposed:service:102.0.0
+    implementation files('libs/service-102.0.0-nometa.aar')
+    // interface aar（IXposedService$Stub 等 AIDL 生成类）必须打进 APK：
+    //   XposedProvider.call 收到 daemon 的 SendBinder 后，
+    //   XposedServiceHelper.onBinderReceived 会 new IXposedService$Stub.Proxy——
+    //   compileOnly/不依赖会导致 UI 进程 NoClassDefFoundError，binder 送达失败。
+    //   （2026-08-28 实测：daemon 送达链正常，仅此一处缺类导致回调崩掉。）
+    //   同样删掉 minCompileSdk=37 的 aar-metadata（nometa 版，生成方法同上）。
+    implementation files('libs/interface-102.0.0-nometa.aar')
+}

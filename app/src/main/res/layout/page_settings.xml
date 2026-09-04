@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        android:paddingBottom="24dp">
+
+        <TextView
+            style="@style/PageTitle"
+            android:text="@string/tab_settings" />
+
+        <!-- 全局 -->
+        <TextView style="@style/SectionTitle" android:text="@string/section_global" />
+
+        <LinearLayout style="@style/Card">
+            <LinearLayout android:id="@+id/row_log_level" style="@style/ItemRow">
+                <LinearLayout style="@style/ItemTextCol">
+                    <TextView style="@style/ItemTitle" android:text="@string/opt_log_level" />
+                    <TextView style="@style/ItemSubtitle" android:text="@string/opt_log_level_desc" />
+                </LinearLayout>
+                <TextView
+                    android:id="@+id/log_level_value"
+                    style="@style/ItemValue"
+                    android:text="@string/level_i" />
+                <ImageView style="@style/ItemArrow" android:src="@drawable/ic_arrow" android:contentDescription="@null" />
+            </LinearLayout>
+
+            <View style="@style/Divider" />
+
+            <LinearLayout style="@style/ItemRow">
+                <LinearLayout style="@style/ItemTextCol">
+                    <TextView style="@style/ItemTitle" android:text="@string/opt_log_file" />
+                    <TextView style="@style/ItemSubtitle" android:text="@string/opt_log_file_desc" />
+                </LinearLayout>
+                <Switch
+                    android:id="@+id/sw_log_file"
+                    style="@style/MiuixSwitch" />
+            </LinearLayout>
+
+            <View style="@style/Divider" />
+
+            <LinearLayout android:id="@+id/row_log_path" style="@style/ItemRow">
+                <LinearLayout style="@style/ItemTextCol">
+                    <TextView style="@style/ItemTitle" android:text="@string/opt_log_path" />
+                    <TextView
+                        android:id="@+id/log_path_value"
+                        style="@style/ItemSubtitle"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:text="" />
+                </LinearLayout>
+                <ImageView style="@style/ItemArrow" android:src="@drawable/ic_arrow" android:contentDescription="@null" />
+            </LinearLayout>
+
+            <View style="@style/Divider" />
+
+            <LinearLayout android:id="@+id/row_log_cap" style="@style/ItemRow">
+                <LinearLayout style="@style/ItemTextCol">
+                    <TextView style="@style/ItemTitle" android:text="@string/opt_log_cap" />
+                    <TextView
+                        android:id="@+id/log_cap_value"
+                        style="@style/ItemSubtitle"
+                        android:text="" />
+                </LinearLayout>
+                <ImageView style="@style/ItemArrow" android:src="@drawable/ic_arrow" android:contentDescription="@null" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 桌面锁定 -->
+        <TextView style="@style/SectionTitle" android:text="@string/section_desktop" />
+
+        <LinearLayout style="@style/Card">
+            <LinearLayout style="@style/ItemRow">
+                <LinearLayout style="@style/ItemTextCol">
+                    <TextView style="@style/ItemTitle" android:text="@string/opt_aggressive" />
+                    <TextView style="@style/ItemSubtitle" android:text="@string/opt_aggressive_desc" />
+                </LinearLayout>
+                <Switch
+                    android:id="@+id/sw_aggressive"
+                    style="@style/MiuixSwitch" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- 输入法锁定 -->
+        <TextView style="@style/SectionTitle" android:text="@string/section_ime" />
+
+        <LinearLayout style="@style/Card">
+            <LinearLayout style="@style/ItemRow">
+                <LinearLayout style="@style/ItemTextCol">
+                    <TextView style="@style/ItemTitle" android:text="@string/opt_input_method" />
+                    <TextView style="@style/ItemSubtitle" android:text="@string/opt_input_method_desc" />
+                </LinearLayout>
+                <Switch
+                    android:id="@+id/sw_input_method"
+                    style="@style/MiuixSwitch" />
+            </LinearLayout>
+
+            <View style="@style/Divider" />
+
+            <LinearLayout android:id="@+id/row_input_method_mode" style="@style/ItemRow">
+                <LinearLayout style="@style/ItemTextCol">
+                    <TextView style="@style/ItemTitle" android:text="@string/opt_input_method_mode" />
+                    <TextView
+                        android:id="@+id/input_method_mode_desc"
+                        style="@style/ItemSubtitle"
+                        android:text="@string/opt_input_method_mode_lock_desc" />
+                </LinearLayout>
+                <ImageView style="@style/ItemArrow" android:src="@drawable/ic_arrow" android:contentDescription="@null" />
+            </LinearLayout>
+
+            <View style="@style/Divider" />
+
+            <LinearLayout android:id="@+id/row_input_method_list" style="@style/ItemRow">
+                <LinearLayout style="@style/ItemTextCol">
+                    <TextView style="@style/ItemTitle" android:text="@string/opt_input_method_list" />
+                    <TextView
+                        android:id="@+id/input_method_list_desc"
+                        style="@style/ItemSubtitle"
+                        android:text="@string/input_method_none" />
+                </LinearLayout>
+                <ImageView style="@style/ItemArrow" android:src="@drawable/ic_arrow" android:contentDescription="@null" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Zeus -->
+        <TextView style="@style/SectionTitle" android:text="@string/section_zeus" />
+
+        <LinearLayout style="@style/Card">
+            <LinearLayout android:id="@+id/row_zeus_model" style="@style/ItemRow">
+                <LinearLayout style="@style/ItemTextCol">
+                    <TextView style="@style/ItemTitle" android:text="@string/opt_zeus_model" />
+                    <TextView style="@style/ItemSubtitle" android:text="@string/opt_zeus_model_desc" />
+                </LinearLayout>
+                <TextView
+                    android:id="@+id/zeus_model_value"
+                    style="@style/ItemValue"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="@string/zeus_model_none" />
+                <ImageView style="@style/ItemArrow" android:src="@drawable/ic_arrow" android:contentDescription="@null" />
+            </LinearLayout>
+
+            <View style="@style/Divider" />
+
+            <LinearLayout android:id="@+id/row_zeus_sn" style="@style/ItemRow">
+                <LinearLayout style="@style/ItemTextCol">
+                    <TextView style="@style/ItemTitle" android:text="@string/opt_zeus_sn" />
+                    <TextView style="@style/ItemSubtitle" android:text="@string/opt_zeus_sn_desc" />
+                </LinearLayout>
+                <TextView
+                    android:id="@+id/zeus_sn_value"
+                    style="@style/ItemValue"
+                    android:maxLines="1"
+                    android:ellipsize="end"
+                    android:text="@string/zeus_sn_none" />
+                <ImageView style="@style/ItemArrow" android:src="@drawable/ic_arrow" android:contentDescription="@null" />
+            </LinearLayout>
+
+            <View style="@style/Divider" />
+
+            <LinearLayout style="@style/ItemRow">
+                <LinearLayout style="@style/ItemTextCol">
+                    <TextView style="@style/ItemTitle" android:text="@string/section_zeus" />
+                    <TextView
+                        android:id="@+id/zeus_system_info"
+                        style="@style/ItemSubtitle"
+                        android:text="" />
+                </LinearLayout>
+            </LinearLayout>
+        </LinearLayout>
+        <TextView
+            style="@style/Footnote"
+            android:text="@string/zeus_footnote" />
+
+        <!-- 其他 -->
+        <TextView style="@style/SectionTitle" android:text="@string/section_about" />
+
+        <LinearLayout style="@style/Card">
+            <LinearLayout android:id="@+id/row_about" style="@style/ItemRow">
+                <TextView style="@style/ItemTitle" android:layout_weight="1" android:text="@string/action_about" />
+                <ImageView style="@style/ItemArrow" android:src="@drawable/ic_arrow" android:contentDescription="@null" />
+            </LinearLayout>
+            <View style="@style/Divider" />
+            <LinearLayout android:id="@+id/row_update" style="@style/ItemRow">
+                <TextView style="@style/ItemTitle" android:layout_weight="1" android:text="@string/action_update" />
+                <ImageView style="@style/ItemArrow" android:src="@drawable/ic_arrow" android:contentDescription="@null" />
+            </LinearLayout>
+            <View style="@style/Divider" />
+            <LinearLayout android:id="@+id/row_repo" style="@style/ItemRow">
+                <TextView style="@style/ItemTitle" android:layout_weight="1" android:text="@string/action_repo" />
+                <ImageView style="@style/ItemArrow" android:src="@drawable/ic_arrow" android:contentDescription="@null" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/version_text"
+            style="@style/Footnote"
+            android:text="" />
+    </LinearLayout>
+</ScrollView>

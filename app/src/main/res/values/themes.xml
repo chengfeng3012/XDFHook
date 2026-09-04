@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 默认（亮色日间模式）。夜间由 values-night/themes.xml 覆盖为暗色，
+         等效 DayNight；全部使用 framework public 主题（Q 的
+         Theme.DeviceDefault.DayNight.* 未进 public.xml，aapt2 拒绝引用） -->
+    <style name="AppTheme" parent="android:Theme.DeviceDefault.Light.NoActionBar">
+        <item name="android:colorPrimary">@color/miuix_blue</item>
+        <item name="android:colorAccent">@color/miuix_blue</item>
+        <item name="android:windowBackground">@color/bg_page</item>
+        <item name="android:statusBarColor">@color/bg_page</item>
+        <item name="android:navigationBarColor">@color/bg_page</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+</resources>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- XDFHook 背景：深蓝对角渐变 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:angle="315"
+        android:startColor="#16213E"
+        android:endColor="#2B3A80"
+        android:type="linear" />
+</shape>

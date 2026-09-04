@@ -1,0 +1,19 @@
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        mavenLocal() // io.github.libxposed:service:102.0.0-nometa（去掉 minCompileSdk=37 元数据的本地构建）
+        google()
+        mavenCentral()
+        maven { url 'https://api.lsposed.org/' }
+    }
+}
+
+rootProject.name = "XDFHook"
+include ':app'

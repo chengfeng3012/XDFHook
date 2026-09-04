@@ -1,0 +1,50 @@
+# ===== Gradle / Android 构建 =====
+.gradle/
+build/
+*/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# ===== 本地依赖产物（构建产物不入库） =====
+app/build/
+app/release/
+
+# 本地 SDK 路径等环境相关配置（绝不入库）
+local.properties
+*.keystore
+*.jks
+
+# ===== IDE =====
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+settings.json
+
+# ===== 产物 / 签名 / 打包 =====
+*.apk
+*.ap_
+*.aab
+*.jar
+*.dex
+!app/libs/*.aar
+!app/libs/*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# ===== Kotlin / Java 编译中间 =====
+*.class
+.hi
+.ds_store/
+hs_err_pid*
+
+# ===== 日志 / 临时 =====
+*.log
+*.tmp
+*.swp
+*~
+.DS_Store
+
+# ===== 触屏设备临时探针 / 生成物（保留 tools/gen_icons.py 源码，忽略其生成） =====
+tools/preview.png

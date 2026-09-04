@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 日志：三行列表 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path
+        android:strokeColor="#000000"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M4.5,6 H19.5 M4.5,12 H19.5 M4.5,18 H13" />
+    <path
+        android:fillColor="#000000"
+        android:pathData="M17,16.2 a2.3,2.3 0 1 1 0,4.6 a2.3,2.3 0 1 1 0,-4.6 z" />
+</vector>

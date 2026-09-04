@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 三个旧模块 scope 的并集：
+         XposedModule(android/systemui/launcher3)
+         + XdfSettingsHook(android/com.android.settings/cn.xdf.zeus)
+         + GalleryHook(com.android.gallery3d) -->
+    <string-array name="xposed_scope">
+        <item>android</item>
+        <item>com.android.settings</item>
+        <item>cn.xdf.zeus</item>
+        <item>com.android.launcher3</item>
+        <item>com.android.systemui</item>
+        <item>com.android.gallery3d</item>
+    </string-array>
+</resources>

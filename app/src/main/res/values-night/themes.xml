@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 夜间模式：暗色 DeviceDefault。窗口/状态栏颜色引用同名 color 资源，
+         values-night/colors.xml 自动给出暗色值 -->
+    <style name="AppTheme" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:colorPrimary">@color/miuix_blue</item>
+        <item name="android:colorAccent">@color/miuix_blue</item>
+        <item name="android:windowBackground">@color/bg_page</item>
+        <item name="android:statusBarColor">@color/bg_page</item>
+        <item name="android:navigationBarColor">@color/bg_page</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

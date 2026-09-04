@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">XDFHook</string>
+    <string name="module_description" translatable="false">A simple hook for XDF-N1 to unlock system features. Module by chengfeng3012.</string>
+
+    <string name="tab_overview">总览</string>
+    <string name="tab_operation">操作</string>
+
+    <!-- 操作页 -->
+    <string name="op_root_title">Root 操作权限</string>
+    <string name="op_root_subtitle_off">未授权：开启此开关将请求 root 权限</string>
+    <string name="op_root_subtitle_ok">已授权（root 可用）</string>
+    <string name="op_root_checking">正在获取 root 权限…</string>
+    <string name="op_root_footnote">顶部总开关：开启后先请求并检测 root 权限，拿到后才可用下方按钮；可随时关闭，关闭后即使有 root 下方按钮也全部禁用（防止模块被装进无 root 环境或在根权限管理中被屏蔽）。</string>
+    <string name="op_section_function">功能</string>
+    <string name="op_section_danger">危险区</string>
+    <string name="op_footnote">软重启 = 杀掉 system_server，zygote 派生的全部进程（含全部 app 与桌面）都会随之终止，然后由 zygote 重新拉起系统骨架，真正\"闪一下\"的是系统 UI；硬重启 = 重启整个设备。危险区三项均需二次确认，全部经 shell 以 root 执行。</string>
+
+    <string name="op_act_rotate">自动旋转</string>
+    <string name="op_act_dark">深色模式</string>
+    <string name="op_act_nav">导航模式</string>
+    <string name="op_act_media">刷新媒体库</string>
+    <string name="op_act_media_short">媒体</string>
+    <string name="op_act_orientation">固定屏幕朝向</string>
+    <string name="op_act_orientation_short">朝向</string>
+    <string name="op_act_ime">切换输入法</string>
+    <string name="op_act_ime_short">输入法</string>
+    <string name="op_act_desktop">切换桌面</string>
+    <string name="op_act_desktop_short">桌面</string>
+    <string name="op_orient_title">选择固定朝向</string>
+    <string name="op_orient_portrait">竖屏（0°）</string>
+    <string name="op_orient_landscape">横屏（90°）</string>
+    <string name="op_orient_rev_portrait">反向竖屏（180°）</string>
+    <string name="op_orient_rev_landscape">反向横屏（270°）</string>
+
+    <string name="op_btn_off">关</string>
+    <string name="op_btn_on">开</string>
+    <string name="op_btn_deep">深</string>
+    <string name="op_btn_light">浅</string>
+    <string name="op_btn_gesture">手势</string>
+    <string name="op_btn_three">三键</string>
+
+    <string name="op_act_soft">软重启</string>
+    <string name="op_act_soft_short">软启</string>
+    <string name="op_act_hard">硬重启</string>
+    <string name="op_act_hard_short">硬启</string>
+    <string name="op_act_sysui">重启系统 UI</string>
+    <string name="op_act_sysui_short">UI</string>
+
+    <string name="op_confirm_soft_title">确认软重启？</string>
+    <string name="op_confirm_soft_msg">软重启会杀掉 system_server，zygote 派生的所有进程（全部应用与桌面）都会随之终止、再被重新拉起，当前正在进行的一切操作都将中断。确定继续？</string>
+    <string name="op_confirm_hard_title">确认硬重启？</string>
+    <string name="op_confirm_hard_msg">硬重启将立即重启整个设备（reboot），未保存内容会丢失。确定继续？</string>
+    <string name="op_confirm_sysui_title">确认重启系统 UI？</string>
+    <string name="op_confirm_sysui_msg">将强制结束 com.android.systemui，系统 UI（状态栏 / 导航栏 / 桌面渲染）会闪一下并自动重启。确定继续？</string>
+    <string name="op_confirm_ok">确认</string>
+    <string name="op_root_denied">未获取到 root 权限：请先在根权限管理器中授权 XDFHook</string>
+    <string name="op_running">正在执行…</string>
+    <string name="op_exec_done">已执行</string>
+    <string name="op_exec_fail">执行失败（命令被拒或未获 root）</string>
+    <string name="tab_logs">日志</string>
+    <string name="tab_settings">选项</string>
+
+    <string name="env_checking">正在检查运行环境…</string>
+    <string name="env_ok">运行环境正常：配置与日志文件均可读写。</string>
+    <string name="env_service_ok">服务已连接：%s\n配置与日志经 LSPosed 官方通道（daemon 托管存储，实时生效）。</string>
+    <string name="env_service_off">未检测到 LSPosed 服务：模块可能未激活或框架版本过老。当前为降级模式，展示开关不可保存。</string>
+    <string name="env_no_read">日志不可读（remote 通道未连接且文件受限），日志页暂不可用。</string>
+    <string name="env_no_write">配置不可写（remote 通道未连接且文件受限），开关与选项暂无法保存。</string>
+
+    <string name="section_module">模块</string>
+    <string name="section_global">全局</string>
+    <string name="section_desktop">桌面锁定</string>
+    <string name="section_ime">输入法锁定</string>
+    <string name="section_about">其他</string>
+
+    <string name="master_title">启用模块</string>
+    <string name="master_subtitle">总开关：关闭后所有 hook 不再安装（重启对应应用后生效）</string>
+    <string name="overview_footnote">提示：子模块仅在对应应用启动时加载。"运行中"表示对应进程当前已注入模块代码（实时查询，需在 LSPosed 启用作用域）。开关变更经 LSPosed 推送到 hook 进程实时生效；个别 hook 安装发生在进程启动时，重启对应应用可获得完整效果。</string>
+
+    <string name="state_loading">…</string>
+    <string name="state_off">已停用</string>
+    <string name="state_ok">运行中</string>
+    <string name="state_na">未检测到</string>
+
+    <string name="mod_zeus">Zeus 管控解除</string>
+    <string name="mod_zeus_desc">家长管控检查链 / 云控 / 序列号</string>
+    <string name="mod_settings">设置解锁</string>
+    <string name="mod_settings_desc">属性放行 / 开发者选项 / 条目还原</string>
+    <string name="mod_chooser">分享选择器</string>
+    <string name="mod_chooser_desc">“仅此一次”按钮 / 分享面板点击修复</string>
+    <string name="mod_launcher">桌面修复</string>
+    <string name="mod_launcher_desc">最近任务隐藏列表解除</string>
+    <string name="mod_home">HOME 解锁</string>
+    <string name="mod_home_desc">解除默认桌面强制锁定</string>
+    <string name="mod_gallery">相册编辑</string>
+    <string name="mod_gallery_desc">图片“编辑”按钮恢复</string>
+
+    <string name="opt_aggressive">PMS 激进拦截</string>
+    <string name="opt_aggressive_desc">拦截一切指向 cn.xdf.pad.launcher 的 preferred activity 写入（含手动设置 XDF 桌面为默认）。关闭时仅在 HOME 解锁探针中记录日志，不拦截。</string>
+    <string name="opt_log_level">日志级别</string>
+    <string name="opt_log_level_desc">落盘与展示的最低级别（重启后生效）</string>
+
+    <string name="opt_log_file">日志落盘</string>
+    <string name="opt_log_file_desc">写入单文件日志（默认 /sdcard/Android/XDFHook.log）</string>
+    <string name="opt_log_path">落盘路径</string>
+    <string name="opt_log_path_desc">即时生效：输入后先试探写入，成功才保存</string>
+    <string name="opt_log_cap">日志上限</string>
+    <string name="opt_log_cap_desc">落盘文件大小上限（单位 KB）</string>
+    <string name="log_path_value_fmt">%s</string>
+    <string name="log_cap_value_fmt">%d KB</string>
+    <string name="input_log_path_hint">输入日志文件路径</string>
+    <string name="input_log_path_default"></string>
+    <string name="toast_log_path_ok">落盘路径生效</string>
+    <string name="toast_log_path_fail">写入失败：无写入权限或路径无效</string>
+    <string name="input_log_cap_hint">单位 KB（1 ~ %d）</string>
+    <string name="toast_log_cap_invalid">请输入有效数值（1 ~ %d）</string>
+    <string name="toast_log_cap_ok">日志上限已保存</string>
+
+    <string name="opt_input_method">输入法拦截器</string>
+    <string name="opt_input_method_desc">防止输入法被恶意或意外更改</string>
+    <string name="opt_input_method_mode">拦截模式</string>
+    <string name="opt_input_method_mode_lock">固化模式（默认）</string>
+    <string name="opt_input_method_mode_lock_desc">阻止任何对输入法设置的更改</string>
+    <string name="opt_input_method_mode_blacklist">黑名单模式</string>
+    <string name="opt_input_method_mode_blacklist_desc">阻止黑名单中的输入法被设置为默认</string>
+    <string name="opt_input_method_list">黑名单管理</string>
+    <string name="opt_input_method_list_desc">选择要阻止的输入法</string>
+    <string name="input_method_select_title">选择输入法</string>
+    <string name="input_method_selected">已选择：%d 个</string>
+    <string name="input_method_none">未选择任何输入法</string>
+
+    <!-- Zeus 板块 -->
+    <string name="section_zeus">Zeus</string>
+    <string name="opt_zeus_model">设备型号（冒充）</string>
+    <string name="opt_zeus_model_desc">仅替换 zeus 通过 DeviceInfoProvider 获取到的型号，不修改系统真实型号</string>
+    <string name="opt_zeus_sn">序列号（冒充）</string>
+    <string name="opt_zeus_sn_desc">仅替换 zeus 通过 DeviceInfoProvider 获取到的序列号，不修改系统真实序列号</string>
+    <string name="zeus_model_none">未设置（上报真实型号）</string>
+    <string name="zeus_sn_none">未设置（上报真实序列号）</string>
+    <string name="select_zeus_model_title">选择冒充型号</string>
+    <string name="input_zeus_sn_title">输入冒充序列号</string>
+    <string name="input_zeus_sn_hint">输入序列号，留空则恢复真实值</string>
+    <string name="toast_zeus_sn_ok">序列号已保存</string>
+    <string name="zeus_system_info">系统真实：型号 %1$s · 序列号 %2$s</string>
+    <string name="zeus_footnote">这些值只在 zeus 查询设备信息时生效（改值不改 key，不猜协议），系统 Build / 真实序列号保持不变；是否生效可在 XDFHook 日志中核对 \"DeviceInfoProvider\" 的 inline=&gt;custom 对比。</string>
+
+    <string name="level_v">Verbose</string>
+    <string name="level_d">Debug</string>
+    <string name="level_i">Info</string>
+    <string name="level_w">Warn</string>
+    <string name="level_e">Error</string>
+
+    <string name="action_about">关于</string>
+    <string name="action_update">检查更新</string>
+    <string name="action_repo">跳转仓库</string>
+
+    <string name="log_empty">暂无日志\n\n运行相关应用后，其产生的日志将自动显示在这里。</string>
+    <string name="chip_all">全部</string>
+    <string name="about_body">XDFHook v%s (%d)\n\nA simple hook for XDF-N1 to unlock system features.\n\nModule by chengfeng3012\n\n由 XdfSettingsHook、XposedModule、GalleryHook 三个模块整合而来，LibXposed API 102。</string>
+    <string name="update_dialog">检查更新失败，请稍后再试。</string>
+    <string name="update_checking">正在连接 GitHub 检查新版本…</string>
+    <string name="update_available">发现新版本</string>
+    <string name="update_found">发现新版本 %1$s（%2$s）\n\n点击下载直接安装，或前往仓库查看。</string>
+    <string name="update_found_body">发现新版本 %1$s（%2$s）\n\n更新说明：\n%3$s\n\n点击下载直接安装，或前往仓库查看。</string>
+    <string name="update_latest">当前 v%1$s (%2$d) 已是最新版本。</string>
+    <string name="update_download">下载 APK</string>
+</resources>

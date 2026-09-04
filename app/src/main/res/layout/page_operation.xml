@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 操作页：Root 总开关 + 功能/危险区两组圆形按钮 -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingLeft="16dp"
+        android:paddingRight="16dp"
+        android:paddingBottom="24dp">
+
+        <TextView
+            style="@style/PageTitle"
+            android:text="@string/tab_operation" />
+
+        <!-- Root 总开关（横条形，顶部） -->
+        <LinearLayout style="@style/Card">
+            <LinearLayout style="@style/ItemRow">
+                <LinearLayout style="@style/ItemTextCol">
+                    <TextView style="@style/ItemTitle" android:text="@string/op_root_title" />
+                    <TextView
+                        android:id="@+id/root_state"
+                        style="@style/ItemSubtitle"
+                        android:text="@string/op_root_subtitle_off" />
+                </LinearLayout>
+                <Switch
+                    android:id="@+id/sw_root_op"
+                    style="@style/MiuixSwitch" />
+            </LinearLayout>
+        </LinearLayout>
+        <TextView
+            style="@style/Footnote"
+            android:text="@string/op_root_footnote" />
+
+        <!-- 功能 -->
+        <TextView style="@style/SectionTitle" android:text="@string/op_section_function" />
+        <LinearLayout style="@style/Card">
+            <LinearLayout
+                android:id="@+id/op_function_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp" />
+        </LinearLayout>
+
+        <!-- 危险区 -->
+        <TextView
+            style="@style/SectionTitle"
+            android:layout_height="wrap_content"
+            android:textColor="@color/log_e"
+            android:text="@string/op_section_danger" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:background="@drawable/bg_card_danger">
+            <LinearLayout
+                android:id="@+id/op_danger_container"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:paddingTop="14dp"
+                android:paddingBottom="14dp" />
+        </LinearLayout>
+
+        <TextView
+            style="@style/Footnote"
+            android:text="@string/op_footnote" />
+    </LinearLayout>
+</ScrollView>

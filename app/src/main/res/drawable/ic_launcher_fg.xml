@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- XDFHook 前景：一笔 J 形钩（白）+ 钩弯内琥珀圆点，极简符号
+     视口 108（自适应图标），内容收在中心 66dp 安全区内 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- J 形钩：杆 -> 底弧 -> 尖（一条连续路径，包围盒居中） -->
+    <path
+        android:strokeColor="#F2F6FF"
+        android:strokeWidth="9"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M67,33.5 L67,61.5 A13,13 0 0 1 41,61.5 L41,49.5" />
+
+    <!-- 琥珀圆点 -->
+    <path
+        android:fillColor="#FFC42E"
+        android:pathData="M49.5,63.5 a4.5,4.5 0 1 1 9,0 a4.5,4.5 0 1 1 -9,0 z" />
+</vector>

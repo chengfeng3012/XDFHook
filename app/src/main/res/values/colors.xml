@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- miuix 风格配色（亮色） -->
+    <color name="miuix_blue">#3482FF</color>
+    <color name="bg_page">#F3F4F6</color>
+    <color name="card_bg">#FFFFFF</color>
+    <color name="divider">#E7E7EA</color>
+    <color name="text_primary">#1A1A1C</color>
+    <color name="text_secondary">#8A8A8E</color>
+    <color name="text_disabled">#B8B8BD</color>
+
+    <color name="pill_ok_bg">#E4F8EA</color>
+    <color name="pill_ok_text">#1FA64A</color>
+    <color name="pill_off_bg">#EDEDF0</color>
+    <color name="pill_off_text">#8A8A8E</color>
+    <color name="pill_warn_bg">#FFF0E0</color>
+    <color name="pill_warn_text">#E08600</color>
+
+    <!-- 日志级别色 -->
+    <color name="log_v">#B0B0B8</color>
+    <color name="log_d">#8A8A8E</color>
+    <color name="log_i">#3A3A3C</color>
+    <color name="log_w">#E08600</color>
+    <color name="log_e">#E5484D</color>
+
+    <color name="chip_bg">#E9E9EE</color>
+    <color name="switch_off">#D9D9DE</color>
+    <color name="dot_gray">#C7C7CC</color>
+
+    <!-- 危险区卡片：淡红色 -->
+    <color name="card_danger">#FDECEE</color>
+    <color name="card_danger_stroke">#F0A8B2</color>
+</resources>

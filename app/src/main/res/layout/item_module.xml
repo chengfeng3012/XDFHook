@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 子模块行：色点 + 标题/副标题 + 状态 pill + Switch -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    style="@style/ItemRow">
+
+    <View
+        android:id="@+id/mod_dot"
+        android:layout_width="10dp"
+        android:layout_height="10dp"
+        android:background="@drawable/bg_chip" />
+
+    <LinearLayout style="@style/ItemTextColDot">
+        <TextView
+            android:id="@+id/mod_title"
+            style="@style/ItemTitle"
+            android:text="" />
+        <TextView
+            android:id="@+id/mod_subtitle"
+            style="@style/ItemSubtitle"
+            android:text="" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/mod_pill"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:background="@drawable/bg_pill"
+        android:paddingLeft="8dp"
+        android:paddingRight="8dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:text="@string/state_loading" />
+
+    <Space
+        android:layout_width="10dp"
+        android:layout_height="1dp" />
+
+    <Switch
+        android:id="@+id/mod_switch"
+        style="@style/MiuixSwitch" />
+</LinearLayout>
