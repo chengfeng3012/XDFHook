@@ -2,6 +2,7 @@ package cn.cf3012.xdf;
 
 import android.content.ContentResolver;
 import android.os.Binder;
+import android.os.UserHandle;
 
 import io.github.libxposed.api.XposedInterface;
 
@@ -63,17 +64,30 @@ final class InputMethodHooks {
             return;
         }
 
+        int mode = cfg.getInt(K_INPUT_METHOD_MODE, MODE_LOCK);
+
         // Hook Settings.Secure.putString(ContentResolver, String, String)
         XDFHook.hookMethod(cl, "android.provider.Settings$Secure", "putString",
                 new Class<?>[]{ContentResolver.class, String.class, String.class},
+                chain -> interceptPutString(chain, "Secure"));
+        // Hook Settings.Secure.putStringForUser — 防止系统内部绕过 putString 直接写
+        XDFHook.hookMethod(cl, "android.provider.Settings$Secure", "putStringForUser",
+                new Class<?>[]{ContentResolver.class, String.class, String.class,
+                        String.class, boolean.class, boolean.class, int.class},
                 chain -> interceptPutString(chain, "Secure"));
 
         // Hook Settings.Global.putString(ContentResolver, String, String)
         XDFHook.hookMethod(cl, "android.provider.Settings$Global", "putString",
                 new Class<?>[]{ContentResolver.class, String.class, String.class},
                 chain -> interceptPutString(chain, "Global"));
+        // Hook Settings.Global.putStringForUser
+        XDFHook.hookMethod(cl, "android.provider.Settings$Global", "putStringForUser",
+                new Class<?>[]{ContentResolver.class, String.class, String.class,
+                        String.class, boolean.class, boolean.class, int.class},
+                chain -> interceptPutString(chain, "Global"));
 
-        XDFHook.logi(TAG, "input method hooks installed (mode=" + cfg.getInt(K_INPUT_METHOD_MODE, MODE_LOCK) + ")");
+        XDFHook.logi(TAG, "input method hooks installed (mode=" + mode
+                + ", 4 methods hooked: putString+putStringForUser × Secure+Global)");
     }
 
     /**
@@ -84,12 +98,20 @@ final class InputMethodHooks {
         if (!cfg.enabled(K_MOD_INPUT_METHOD)) {
             return;
         }
-        // 同样 hook Settings.Secure 和 Settings.Global
+        // putString + putStringForUser，Secure + Global，共 4 条路径全覆盖
         XDFHook.hookMethod(cl, "android.provider.Settings$Secure", "putString",
                 new Class<?>[]{ContentResolver.class, String.class, String.class},
                 chain -> interceptPutString(chain, "Secure"));
+        XDFHook.hookMethod(cl, "android.provider.Settings$Secure", "putStringForUser",
+                new Class<?>[]{ContentResolver.class, String.class, String.class,
+                        String.class, boolean.class, boolean.class, int.class},
+                chain -> interceptPutString(chain, "Secure"));
         XDFHook.hookMethod(cl, "android.provider.Settings$Global", "putString",
                 new Class<?>[]{ContentResolver.class, String.class, String.class},
+                chain -> interceptPutString(chain, "Global"));
+        XDFHook.hookMethod(cl, "android.provider.Settings$Global", "putStringForUser",
+                new Class<?>[]{ContentResolver.class, String.class, String.class,
+                        String.class, boolean.class, boolean.class, int.class},
                 chain -> interceptPutString(chain, "Global"));
     }
 

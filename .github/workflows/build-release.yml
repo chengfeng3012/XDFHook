@@ -60,18 +60,24 @@ jobs:
         id: tag
         run: echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
 
+      - name: Prepare release body
+        id: body
+        run: |
+          if [ -s RELEASE_NOTES.md ]; then
+            echo "has_body=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_body=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: XDFHook ${{ steps.tag.outputs.tag }}
-          body: |
-            ## XDFHook ${{ steps.tag.outputs.tag }}
-
-            自动构建于 GitHub Actions。
-
-            > 点击下方 APK 附件下载安装（Debug 签名，可直接安装）。
-            > 安装后需在 LSPosed 启用模块并勾选作用域。
+          # RELEASE_NOTES.md 存在且非空时用其内容作为 Release 正文，
+          # generate_release_notes 自动追加 commit 历史在下方。
+          # 文件不存在时 body 为空，仅显示自动生成的变更日志。
+          body_path: ${{ steps.body.outputs.has_body == 'true' && 'RELEASE_NOTES.md' || '' }}
           files: app/build/outputs/apk/debug/app-debug.apk
           generate_release_notes: true
         env:

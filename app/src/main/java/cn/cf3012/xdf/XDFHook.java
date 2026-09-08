@@ -8,6 +8,9 @@ import io.github.libxposed.api.XposedModuleInterface;
 
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
+import java.util.Collections;
+import java.util.LinkedHashSet;
+import java.util.Set;
 
 /**
  * XDFHook — XDF-N1 学习机 (XDF-N1 / MT8788 / Android 10) 综合解锁模块。
@@ -51,6 +54,18 @@ public class XDFHook extends XposedModule {
 
     /** 模块接口实例（XposedModule 实例即 XposedInterface），各子模块静态使用 */
     private static volatile XposedInterface sApi;
+
+    /**
+     * hook 回调强引用保活集合。
+     *
+     * LibXposed API 102 的 hook 回调（lambda/匿名类）如果没有被强引用持有，
+     * GC 后会导致 native 层回调时 Java 对象已失效 → PROTECTIVE 吞异常 →
+     * hook 静默失效。这解释了"启动初期有效、运行时间长后失效"的现象。
+     * 此 Set 用 Collections.synchronizedSet 包装，每个 hooker 加入后永不移除，
+     * 每个进程生命周期内只增不减（hook 数量有限，内存开销可忽略）。
+     */
+    private static final Set<Object> sHookKeepAlive =
+            Collections.synchronizedSet(new LinkedHashSet<Object>());
 
     /* ==================== 生命周期 ==================== */
 
@@ -316,23 +331,27 @@ public class XDFHook extends XposedModule {
 
     /* ==================== hook 工具 ==================== */
 
-    /** 注册一个 PROTECTIVE 模式的 hook（interceptor 内异常不外抛到宿主） */
+    /** 注册一个 PROTECTIVE 模式的 hook（interceptor 内异常不外抛到宿主）。
+     *  同时把 hooker 加入强引用集合，防止 GC 后 native 回调丢失。 */
     public static void hook(Executable target, XposedInterface.Hooker hooker) {
         XposedInterface api = sApi;
         if (api == null) {
             return;
         }
+        sHookKeepAlive.add(hooker);
         api.hook(target)
                 .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                 .intercept(hooker);
     }
 
-    /** hook 类初始化器（clinit 之后执行一段逻辑，如改写静态字段） */
+    /** hook 类初始化器（clinit 之后执行一段逻辑，如改写静态字段）。
+     *  同样加入强引用集合防 GC。 */
     public static void hookClassInit(Class<?> clazz, XposedInterface.Hooker hooker) {
         XposedInterface api = sApi;
         if (api == null) {
             return;
         }
+        sHookKeepAlive.add(hooker);
         api.hookClassInitializer(clazz)
                 .setExceptionMode(XposedInterface.ExceptionMode.PROTECTIVE)
                 .intercept(hooker);
