@@ -46,14 +46,26 @@ jobs:
           echo "--- gradle.properties after neutralization ---"
           cat gradle.properties
 
-      - name: Build Debug APK
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+      # 用 GitHub Secrets 里的 base64 解出固定 release keystore，保证每次 release 签名一致
+      #（此前用 assembleDebug 走 AGP 随机 debug.keystore，每次证书不同导致无法覆盖升级）
+      - name: Decode release keystore from secrets
+        run: |
+          echo "${{ secrets.APP_KEYSTORE_B64 }}" | base64 -d > "${{ runner.temp }}/xdfhook-release.jks"
+          ls -l "${{ runner.temp }}/xdfhook-release.jks"
+
+      - name: Build Release APK (fixed signing key)
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+        env:
+          APP_KEYSTORE_FILE: ${{ runner.temp }}/xdfhook-release.jks
+          APP_KEYSTORE_PASS: ${{ secrets.APP_KEYSTORE_PASS }}
+          APP_KEY_ALIAS: ${{ secrets.APP_KEY_ALIAS }}
+          APP_KEY_PASS: ${{ secrets.APP_KEY_PASS }}
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: xdfhook-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
       - name: Tag name for release
@@ -78,7 +90,7 @@ jobs:
           # generate_release_notes 自动追加 commit 历史在下方。
           # 文件不存在时 body 为空，仅显示自动生成的变更日志。
           body_path: ${{ steps.body.outputs.has_body == 'true' && 'RELEASE_NOTES.md' || '' }}
-          files: app/build/outputs/apk/debug/app-debug.apk
+          files: app/build/outputs/apk/release/app-release.apk
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

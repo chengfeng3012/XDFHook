@@ -2,6 +2,15 @@ plugins {
     id 'com.android.application'
 }
 
+// ----------------- release 签名（固定 key，来自环境变量 / CI secrets） -----------------
+// 未提供环境变量时 release 不签名（产未签名包）；debug 始终走自动 debug.keystore。
+// 本轮改造目的：让每次 CI release 用同一个 key，保证跨版本无缝覆盖安装，而非每次随机证书。
+def appStoreFile = System.getenv('APP_KEYSTORE_FILE')
+def appStorePass = System.getenv('APP_KEYSTORE_PASS')
+def appKeyAlias = System.getenv('APP_KEY_ALIAS')
+def appKeyPass = System.getenv('APP_KEY_PASS')
+def releaseSigningReady = appStoreFile && appStorePass && appKeyAlias && appKeyPass
+
 android {
     namespace 'cn.cf3012.xdf'
     compileSdk 30
@@ -12,14 +21,28 @@ android {
         minSdk 26
         // 设备 XDF-N1 为 Android 10 (API 29)，targetSdk 与 OS 一致，零 compat 层
         targetSdk 29
-        versionCode 12
-        versionName "1.0.12"
+        versionCode 13
+        versionName "1.0.13"
+    }
+
+    signingConfigs {
+        release {
+            if (releaseSigningReady) {
+                storeFile file(appStoreFile)
+                storePassword appStorePass
+                keyAlias appKeyAlias
+                keyPassword appKeyPass
+            }
+        }
     }
 
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (releaseSigningReady) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 
