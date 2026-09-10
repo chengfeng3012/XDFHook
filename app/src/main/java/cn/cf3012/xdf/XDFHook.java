@@ -51,6 +51,8 @@ public class XDFHook extends XposedModule {
     public static final String PKG_ZEUS = "cn.xdf.zeus";
     public static final String PKG_LAUNCHER = "com.android.launcher3";
     public static final String PKG_GALLERY = "com.android.gallery3d";
+    /** AOSP 软件包安装程序：解除 Roco 签名白名单 + UserRestriction/unknown-source 安装限制 */
+    public static final String PKG_PACKAGE_INSTALLER = "com.android.packageinstaller";
 
     /** 模块接口实例（XposedModule 实例即 XposedInterface），各子模块静态使用 */
     private static volatile XposedInterface sApi;
@@ -242,6 +244,20 @@ public class XDFHook extends XposedModule {
                     @Override
                     public void run() throws Exception {
                         GalleryHooks.hookAll(cl);
+                    }
+                });
+                break;
+            case PKG_PACKAGE_INSTALLER:
+                // 软件包安装程序：解除安装限制（签名白名单 + no_install/unknown sources）
+                // 注意：此进程非 system_server，kill 进程重开即可生效（无需重启系统）。
+                if (!cfg.modPackageInstall) {
+                    logi(TAG, "package install module disabled, skip");
+                    break;
+                }
+                runGuarded("PackageInstallerHooks", new HookInstall() {
+                    @Override
+                    public void run() throws Exception {
+                        PackageInstallerHooks.hookAll(cl);
                     }
                 });
                 break;

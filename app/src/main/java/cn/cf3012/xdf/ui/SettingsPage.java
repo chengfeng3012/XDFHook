@@ -48,6 +48,11 @@ final class SettingsPage extends BasePage {
     private TextView logCapValue;
     private boolean bindingLogFile;
 
+    // 安装解锁
+    private Switch swPackageInstall;
+    /** 安装解锁开关防循环绑定标志 */
+    private boolean bindingPackageInstall;
+
     // Zeus 设备信息冒充
     private TextView zeusModelValue;
     private TextView zeusSnValue;
@@ -140,6 +145,20 @@ final class SettingsPage extends BasePage {
             }
         });
 
+        // 安装解锁开关
+        swPackageInstall = find(R.id.sw_package_install);
+        swPackageInstall.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                if (bindingPackageInstall) {
+                    return;
+                }
+                if (!AppConfig.setBoolean(AppConfig.K_MOD_PACKAGE_INSTALL, isChecked)) {
+                    Toast.makeText(activity, R.string.env_no_write, Toast.LENGTH_LONG).show();
+                }
+            }
+        });
+
         // Zeus 板块：型号选择 / 序列号输入 / 系统真实值对比
         zeusModelValue = find(R.id.zeus_model_value);
         zeusSnValue = find(R.id.zeus_sn_value);
@@ -212,6 +231,10 @@ final class SettingsPage extends BasePage {
         updateLogPathValue(cfg.logFilePath);
         updateLogCapValue(cfg.logFileCapKb);
         bindingLogFile = false;
+
+        bindingPackageInstall = true;
+        swPackageInstall.setChecked(cfg.modPackageInstall);
+        bindingPackageInstall = false;
 
         updateZeusModelValue(cfg.zeusModel);
         updateZeusSnValue(cfg.zeusSn);

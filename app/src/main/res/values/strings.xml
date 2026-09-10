@@ -21,6 +21,12 @@
     <string name="op_act_nav">导航模式</string>
     <string name="op_act_media">刷新媒体库</string>
     <string name="op_act_media_short">媒体</string>
+    <string name="op_act_silent_install">静默安装</string>
+    <string name="op_act_silent_install_short">装</string>
+    <string name="op_silent_install_title">静默安装 APK</string>
+    <string name="op_silent_install_hint">输入 APK 完整绝对路径</string>
+    <string name="op_silent_install_empty">路径为空，已取消</string>
+    <string name="op_silent_install_ok">已发起静默安装</string>
     <string name="op_act_orientation">固定屏幕朝向</string>
     <string name="op_act_orientation_short">朝向</string>
     <string name="op_act_ime">切换输入法</string>
@@ -72,6 +78,9 @@
     <string name="section_global">全局</string>
     <string name="section_desktop">桌面锁定</string>
     <string name="section_ime">输入法锁定</string>
+    <string name="section_install">安装解锁</string>
+    <string name="opt_package_install">解除安装限制</string>
+    <string name="opt_package_install_desc">放行软件包安装程序的签名白名单，并越过 no_install / 未知来源限制（需在 LSPosed 中把 com.android.packageinstaller 加入 scope）</string>
     <string name="section_about">其他</string>
 
     <string name="master_title">启用模块</string>

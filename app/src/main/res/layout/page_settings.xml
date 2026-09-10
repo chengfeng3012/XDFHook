@@ -129,6 +129,21 @@
             </LinearLayout>
         </LinearLayout>
 
+        <!-- 安装解锁 -->
+        <TextView style="@style/SectionTitle" android:text="@string/section_install" />
+
+        <LinearLayout style="@style/Card">
+            <LinearLayout style="@style/ItemRow">
+                <LinearLayout style="@style/ItemTextCol">
+                    <TextView style="@style/ItemTitle" android:text="@string/opt_package_install" />
+                    <TextView style="@style/ItemSubtitle" android:text="@string/opt_package_install_desc" />
+                </LinearLayout>
+                <Switch
+                    android:id="@+id/sw_package_install"
+                    style="@style/MiuixSwitch" />
+            </LinearLayout>
+        </LinearLayout>
+
         <!-- Zeus -->
         <TextView style="@style/SectionTitle" android:text="@string/section_zeus" />
 

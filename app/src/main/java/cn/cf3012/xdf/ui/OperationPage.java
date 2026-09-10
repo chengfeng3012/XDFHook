@@ -8,6 +8,7 @@ import android.graphics.drawable.StateListDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.CompoundButton;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.Switch;
 import android.widget.TextView;
@@ -156,6 +157,11 @@ final class OperationPage extends BasePage {
                 0xFFFF6482, false, 0, 0, CMD_DESKTOP));
         FUNCTION_ACTIONS.add(new Action(R.string.op_act_media, R.string.op_act_media_short,
                 0xFFFFC42E, false, 0, 0, CMD_REFRESH_MEDIA));
+
+        // 静默安装：输入 APK 路径后 root pm install（绕过 PackageInstaller UI 限制）
+        FUNCTION_ACTIONS.add(new Action(R.string.op_act_silent_install,
+                R.string.op_act_silent_install_short,
+                0xFF00BCD4, false, 0, 0, null));
 
         // 危险区：软重启 / 硬重启 / 重启系统 UI（均需确认）
         DANGER_ACTIONS.add(new Action(R.string.op_act_soft, R.string.op_act_soft_short,
@@ -378,6 +384,11 @@ final class OperationPage extends BasePage {
             showOrientationPicker();
             return;
         }
+        if (a.command == null) {
+            // 静默安装：弹输入路径对话框（命令为 null 的 Action）
+            showSilentInstallDialog();
+            return;
+        }
         if (a.danger) {
             new AlertDialog.Builder(activity)
                     .setTitle(a.confirmTitleRes)
@@ -424,6 +435,36 @@ final class OperationPage extends BasePage {
                             @Override
                             public void run() {
                                 refreshToggleLabels();
+                            }
+                        });
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
+    /** 静默安装：弹路径输入对话框，确认后 root pm install（借 system 权限静默绕过 PackageInstaller UI） */
+    private void showSilentInstallDialog() {
+        final EditText input = new EditText(activity);
+        input.setSingleLine(true);
+        input.setHint(R.string.op_silent_install_hint);
+        new AlertDialog.Builder(activity)
+                .setTitle(R.string.op_silent_install_title)
+                .setView(input)
+                .setPositiveButton(android.R.string.ok, new android.content.DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(android.content.DialogInterface dialog, int which) {
+                        String path = input.getText().toString().trim();
+                        if (path.isEmpty()) {
+                            Toast.makeText(activity, R.string.op_silent_install_empty, Toast.LENGTH_SHORT).show();
+                            return;
+                        }
+                        // pm install -r -t --user 0：覆盖安装 + 允许测试包 + 限定当前用户
+                        String cmd = "pm install -r -t --user 0 '" + path + "'";
+                        runCommand(cmd, new Runnable() {
+                            @Override
+                            public void run() {
+                                Toast.makeText(activity, R.string.op_silent_install_ok, Toast.LENGTH_SHORT).show();
                             }
                         });
                     }

@@ -12,8 +12,8 @@ android {
         minSdk 26
         // 设备 XDF-N1 为 Android 10 (API 29)，targetSdk 与 OS 一致，零 compat 层
         targetSdk 29
-        versionCode 11
-        versionName "1.0"
+        versionCode 12
+        versionName "1.0.12"
     }
 
     buildTypes {

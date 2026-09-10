@@ -53,6 +53,8 @@ public final class AppConfig {
     public static final String K_MOD_INPUT_METHOD = "mod_input_method";
     public static final String K_INPUT_METHOD_MODE = "input_method_mode";
     public static final String K_INPUT_METHOD_LIST = "input_method_list";
+    /** 解除「软件包安装程序」安装限制 */
+    public static final String K_MOD_PACKAGE_INSTALL = "mod_package_install";
 
     /** Zeus 设备信息冒充：仅影响 zeus 读取到的 model/sn */
     public static final String K_ZEUS_MODEL = "zeus_model";
@@ -83,6 +85,8 @@ public final class AppConfig {
     public boolean modGallery = true;
     public boolean modHome = true;
     public boolean modInputMethod = true;
+    /** 解除软件包安装程序（PackageInstaller）的安装限制 */
+    public boolean modPackageInstall = true;
     /** HOME 解锁探针的激进拦截：拦截一切指向 XDF 桌面的 preferred 写入 */
     public boolean pmsAggressive = false;
     public int logLevel = Log.INFO;
@@ -313,6 +317,7 @@ public final class AppConfig {
             c.modGallery = p.getBoolean(K_GALLERY, true);
             c.modHome = p.getBoolean(K_HOME, true);
             c.modInputMethod = p.getBoolean(K_MOD_INPUT_METHOD, true);
+            c.modPackageInstall = p.getBoolean(K_MOD_PACKAGE_INSTALL, true);
             c.pmsAggressive = p.getBoolean(K_AGGRESSIVE, false);
             c.logLevel = clampLevel(p.getInt(K_LOG_LEVEL, Log.INFO));
             c.inputMethodMode = clampInputMethodMode(p.getInt(K_INPUT_METHOD_MODE, 0));
@@ -440,6 +445,7 @@ public final class AppConfig {
             c.modGallery = getP(p, K_GALLERY, true);
             c.modHome = getP(p, K_HOME, true);
             c.modInputMethod = getP(p, K_MOD_INPUT_METHOD, true);
+            c.modPackageInstall = getP(p, K_MOD_PACKAGE_INSTALL, true);
             c.pmsAggressive = getP(p, K_AGGRESSIVE, false);
             c.logLevel = clampLevel(getI(p, K_LOG_LEVEL, Log.INFO));
             c.inputMethodMode = clampInputMethodMode(getI(p, K_INPUT_METHOD_MODE, 0));
@@ -535,6 +541,8 @@ public final class AppConfig {
                 return modHome;
             case K_MOD_INPUT_METHOD:
                 return modInputMethod;
+            case K_MOD_PACKAGE_INSTALL:
+                return modPackageInstall;
             default:
                 return true;
         }
