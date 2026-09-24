@@ -1,5 +1,7 @@
 plugins {
     id 'com.android.application'
+    // AGP 9.0+ 内置 Kotlin 支持，无需 org.jetbrains.kotlin.android 插件
+    id 'org.jetbrains.kotlin.plugin.compose'
 }
 
 // ----------------- release 签名（固定 key，来自环境变量 / CI secrets） -----------------
@@ -13,14 +15,15 @@ def releaseSigningReady = appStoreFile && appStorePass && appKeyAlias && appKeyP
 
 android {
     namespace 'cn.cf3012.xdf'
-    compileSdk 30
+    compileSdk 37
 
     defaultConfig {
         applicationId "cn.cf3012.xdf"
         // 26 = libxposed service aar 的 minSdk（学习机目标设备 Android 10，无影响）
         minSdk 26
         // 设备 XDF-N1 为 Android 10 (API 29)，targetSdk 与 OS 一致，零 compat 层
-        targetSdk 29
+        // Android 10 (API 29) 设备兼容；向上升级仅影响新机型行为
+        targetSdk 34
         versionCode 13
         versionName "1.0.13"
     }
@@ -44,6 +47,10 @@ android {
                 signingConfig signingConfigs.release
             }
         }
+    }
+
+    buildFeatures {
+        compose true
     }
 
     compileOptions {
@@ -105,4 +112,19 @@ dependencies {
     //   （2026-08-28 实测：daemon 送达链正常，仅此一处缺类导致回调崩掉。）
     //   同样删掉 minCompileSdk=37 的 aar-metadata（nometa 版，生成方法同上）。
     implementation files('libs/interface-102.0.0-nometa.aar')
+
+    // -------------------- Compose Multiplatform + Miuix (HyperOS 风格) --------------------
+    // miuix 0.9.4 基于 CMP 1.12.0 + Kotlin 2.4.20
+    // CMP 1.12.0 的 compose-bom 不在 Maven Central（只在 JetBrains Space），
+    // 改用显式版本（均在 Central 验证存在）
+    implementation 'org.jetbrains.compose.ui:ui:1.12.0'
+    implementation 'org.jetbrains.compose.foundation:foundation:1.12.0'
+    implementation 'org.jetbrains.compose.runtime:runtime:1.12.0'
+    implementation 'org.jetbrains.compose.material3:material3:1.12.0-alpha03'
+    // Android 侧 Compose 宿主（setContent 需要）
+    implementation 'androidx.activity:activity-compose:1.9.3'
+    // Miuix：HyperOS 风格组件库 / 设置项组件 / 图标
+    implementation 'top.yukonga.miuix.kmp:miuix-ui:0.9.4'
+    implementation 'top.yukonga.miuix.kmp:miuix-preference:0.9.4'
+    implementation 'top.yukonga.miuix.kmp:miuix-icons:0.9.4'
 }

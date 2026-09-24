@@ -23,7 +23,7 @@ import org.json.JSONObject;
 final class GithubUpdateChecker {
 
     /** 检查结果回调 */
-    interface Listener {
+    public interface Listener {
         /** 找到更新：latestTag 如 v1.0.10，apkUrl 为直链，note 为 release body 摘要 */
         void onUpdate(String latestTag, String versionName, int versionCode,
                       String apkUrl, String note);
@@ -43,7 +43,7 @@ final class GithubUpdateChecker {
     }
 
     /** 后台线程发起检查，结果回到传入线程回调（invoke 用 runOnUiThread 自行处理） */
-    static void checkAsync(final int currentVersionCode,
+    public static void checkAsync(final int currentVersionCode,
                            final Listener listener) {
         new Thread(new Runnable() {
             @Override
