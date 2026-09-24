@@ -322,9 +322,12 @@ XDFHook.safeHook(cl, "cn.xdf.zeus.sdk.core.provider.ForceControlProvider", "call
                 },
                 "ForceControlProvider.call -> 查询短路 false / 写命令不执行 (云控失效)");
 
-        // B4 设备信息冒充（serial / model）：仅替换 zeus 经 DeviceInfoProvider 读取到的值，
-        // 改值不改 key；配置为空时透传真实值。日志给出 inline(真实) -> custom(冒充) 对比，
-        // 用于核对用户自定义是否生效且不影响系统真实值。
+    }
+
+    /** B4 设备信息冒充（serial / model）：独立 hook 单元（设备信息伪装开关）。
+     *  仅替换 zeus 经 DeviceInfoProvider 读取到的值，改值不改 key；
+     *  配置为空时透传真实值。日志给出 inline(真实) -> custom(冒充) 对比。 */
+    static void hookDeviceInfo(ClassLoader cl) {
         XDFHook.safeHook(cl, "cn.xdf.zeus.sdk.core.provider.DeviceInfoProvider", "call",
                 new Class<?>[]{String.class, String.class, Bundle.class},
                 chain -> {

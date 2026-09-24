@@ -54,6 +54,7 @@ android {
     }
 
     compileOptions {
+        encoding 'UTF-8'
         // 升到 17：AGP 依据它决定依赖 dexing 是否启用 global synthetics——
         // 1.8 时 enableGlobalSynthetics=false，service aar 的 record 类
         // desugaring 无 consumer 直接报错；17 下该开关自动打开

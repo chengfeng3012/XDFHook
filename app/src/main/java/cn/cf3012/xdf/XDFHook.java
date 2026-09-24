@@ -53,6 +53,8 @@ public class XDFHook extends XposedModule {
     public static final String PKG_GALLERY = "com.android.gallery3d";
     /** AOSP 软件包安装程序：解除 Roco 签名白名单 + UserRestriction/unknown-source 安装限制 */
     public static final String PKG_PACKAGE_INSTALLER = "com.android.packageinstaller";
+    /** framework 分享面板宿主（ChooserActivity/ResolverActivity，proc=android:ui） */
+    public static final String PKG_ANDROID = "android";
 
     /** 模块接口实例（XposedModule 实例即 XposedInterface），各子模块静态使用 */
     private static volatile XposedInterface sApi;
@@ -150,32 +152,32 @@ public class XDFHook extends XposedModule {
             logw(TAG, "master off, skip all system_server hooks");
             return;
         }
-        if (cfg.modZeus) {
+        if (cfg.hSystemUnlockControl) {
             try {
                 ZeusUnlocker.hookSystemServer(param.getClassLoader());
             } catch (Throwable t) {
                 loge(t, TAG, "ZeusUnlocker.systemServer");
             }
         }
-        // HOME 解锁：PMS preferred 写入探针（激进拦截开关在探针内部生效）
-        if (cfg.modHome) {
+        // 默认桌面解锁：PMS preferred 写入探针（桌面锁定防护开关在探针内部生效）
+        if (cfg.hSystemHomeUnlock) {
             try {
                 HomeUnlocker.hookSystemServer(param.getClassLoader());
             } catch (Throwable t) {
                 loge(t, TAG, "HomeUnlocker.systemServer");
             }
         } else {
-            logi(TAG, "home module disabled, skip probes");
+            logi(TAG, "home unlock disabled, skip probes");
         }
-        // 输入法拦截器
-        if (cfg.modInputMethod) {
+        // 输入法保护
+        if (cfg.hSystemImeGuard) {
             try {
                 InputMethodHooks.hookSystemServer(param.getClassLoader());
             } catch (Throwable t) {
                 loge(t, TAG, "InputMethodHooks.systemServer");
             }
         } else {
-            logi(TAG, "input method module disabled, skip");
+            logi(TAG, "ime guard disabled, skip");
         }
     }
 
@@ -202,21 +204,32 @@ public class XDFHook extends XposedModule {
 
         switch (pkg) {
             case PKG_ZEUS:
-                // zeus 进程：短路 zeus 检查链 / 云控 / 序列号（ZeusUnlocker B 组）
-                if (!cfg.modZeus) {
-                    logi(TAG, "zeus module disabled, skip");
-                    break;
+                // zeus 进程：解除管控限制（B 组检查链/云控短路）
+                if (cfg.hZeusUnlockControl) {
+                    runGuarded("ZeusUnlocker.zeus", new HookInstall() {
+                        @Override
+                        public void run() throws Exception {
+                            ZeusUnlocker.hookZeusProcess(cl);
+                        }
+                    });
+                } else {
+                    logi(TAG, "zeus unlock control disabled, skip B group");
                 }
-                runGuarded("ZeusUnlocker.zeus", new HookInstall() {
-                    @Override
-                    public void run() throws Exception {
-                        ZeusUnlocker.hookZeusProcess(cl);
-                    }
-                });
+                // zeus 进程：设备信息伪装（型号/SN 独立开关）
+                if (cfg.hZeusSpoofDevice) {
+                    runGuarded("ZeusUnlocker.deviceInfo", new HookInstall() {
+                        @Override
+                        public void run() throws Exception {
+                            ZeusUnlocker.hookDeviceInfo(cl);
+                        }
+                    });
+                } else {
+                    logi(TAG, "zeus spoof disabled, skip B4");
+                }
                 break;
             case PKG_SETTINGS:
-                if (!cfg.modSettings) {
-                    logi(TAG, "settings module disabled, skip");
+                if (!cfg.hSettingsUnlock) {
+                    logi(TAG, "settings unlock disabled, skip");
                     break;
                 }
                 // MtkSettings：家长控制属性放行 + 开发者选项 + 更多设置入口
@@ -235,8 +248,8 @@ public class XDFHook extends XposedModule {
                 });
                 break;
             case PKG_GALLERY:
-                if (!cfg.modGallery) {
-                    logi(TAG, "gallery module disabled, skip");
+                if (!cfg.hGalleryEdit) {
+                    logi(TAG, "gallery edit disabled, skip");
                     break;
                 }
                 // 相册：恢复被裁剪的图片"编辑"按钮
@@ -250,8 +263,8 @@ public class XDFHook extends XposedModule {
             case PKG_PACKAGE_INSTALLER:
                 // 软件包安装程序：解除安装限制（签名白名单 + no_install/unknown sources）
                 // 注意：此进程非 system_server，kill 进程重开即可生效（无需重启系统）。
-                if (!cfg.modPackageInstall) {
-                    logi(TAG, "package install module disabled, skip");
+                if (!cfg.hInstallUnlock) {
+                    logi(TAG, "install unlock disabled, skip");
                     break;
                 }
                 runGuarded("PackageInstallerHooks", new HookInstall() {
@@ -262,8 +275,8 @@ public class XDFHook extends XposedModule {
                 });
                 break;
             case PKG_LAUNCHER:
-                // Launcher3：解除最近任务的应用隐藏过滤
-                if (cfg.modLauncher) {
+                // Launcher3：桌面增强（最近任务不被隐藏）
+                if (cfg.hLauncherRecentTasks) {
                     runGuarded("LauncherHooks", new HookInstall() {
                         @Override
                         public void run() throws Exception {
@@ -271,8 +284,8 @@ public class XDFHook extends XposedModule {
                         }
                     });
                 }
-                // Launcher3：block ROM 的 setXdfDefaultHomeLauncher（HOME 解锁）
-                if (cfg.modHome) {
+                // Launcher3：默认桌面解锁（block ROM 的 setXdfDefaultHomeLauncher）
+                if (cfg.hLauncherHomeUnlock) {
                     runGuarded("HomeUnlocker", new HookInstall() {
                         @Override
                         public void run() throws Exception {
@@ -281,23 +294,25 @@ public class XDFHook extends XposedModule {
                     });
                 }
                 break;
+            case PKG_ANDROID:
+                // 分享面板宿主进程（android:ui）：分享面板修复（"仅此一次"/点击修复）
+                if (cfg.hAndroidShareChooser) {
+                    runGuarded("SystemHooks", new HookInstall() {
+                        @Override
+                        public void run() throws Exception {
+                            SystemHooks.hookAll(cl);
+                        }
+                    });
+                }
+                break;
             default:
                 break;
         }
 
-        // ResolverActivity("仅此一次"按钮) / ChooserActivity(分享面板占位目标) 修复：
-        // framework 类，scope 内所有进程都会加载到（分享对话框出现在哪个进程就修哪个）。
-        if (cfg.modChooser) {
-            runGuarded("SystemHooks", new HookInstall() {
-                @Override
-                public void run() throws Exception {
-                    SystemHooks.hookAll(cl);
-                }
-            });
-        }
+        // 分享面板修复已收敛到 PKG_ANDROID（android:ui 宿主进程），不再全进程注入。
 
-        // 输入法拦截器：在所有进程中 hook Settings put（确保拦截所有调用）
-        if (cfg.modInputMethod) {
+        // 输入法保护：在所有进程中 hook Settings put（确保拦截所有调用）
+        if (cfg.hSystemImeGuard) {
             runGuarded("InputMethodHooks.otherProcess", new HookInstall() {
                 @Override
                 public void run() throws Exception {

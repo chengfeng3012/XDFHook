@@ -60,7 +60,7 @@ final class InputMethodHooks {
      */
     static void hookSystemServer(ClassLoader cl) throws Exception {
         AppConfig cfg = AppConfig.get();
-        if (!cfg.enabled(K_MOD_INPUT_METHOD)) {
+        if (!cfg.hookEnabled(AppConfig.SCOPE_SYSTEM, AppConfig.H_IME_GUARD)) {
             XDFHook.logi(TAG, "input method hooks disabled");
             return;
         }
@@ -100,7 +100,7 @@ final class InputMethodHooks {
      */
     static void hookOtherProcess(ClassLoader cl) throws Exception {
         AppConfig cfg = AppConfig.get();
-        if (!cfg.enabled(K_MOD_INPUT_METHOD)) {
+        if (!cfg.hookEnabled(AppConfig.SCOPE_SYSTEM, AppConfig.H_IME_GUARD)) {
             return;
         }
         // putString + putStringForUser，Secure + Global，共 4 条路径全覆盖。
@@ -159,7 +159,7 @@ final class InputMethodHooks {
                         final String methodName = m.getName();
                         XDFHook.hook(m, chain -> {
                             AppConfig cfg = AppConfig.get();
-                            if (!cfg.enabled(K_MOD_INPUT_METHOD)) {
+                            if (!cfg.hookEnabled(AppConfig.SCOPE_SYSTEM, AppConfig.H_IME_GUARD)) {
                                 return chain.proceed();
                             }
                             int mode = cfg.getInt(K_INPUT_METHOD_MODE, MODE_LOCK);
@@ -214,7 +214,7 @@ final class InputMethodHooks {
      */
     private static Object interceptPutString(XposedInterface.Chain chain, String table) throws Throwable {
         AppConfig cfg = AppConfig.get();
-        if (!cfg.enabled(K_MOD_INPUT_METHOD)) {
+        if (!cfg.hookEnabled(AppConfig.SCOPE_SYSTEM, AppConfig.H_IME_GUARD)) {
             return chain.proceed();
         }
 

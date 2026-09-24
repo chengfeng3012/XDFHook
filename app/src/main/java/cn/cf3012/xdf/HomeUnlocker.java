@@ -115,7 +115,7 @@ final class HomeUnlocker {
             // AOSP 不会自发写 XDF preferred）→ system_server 自身发起的
             // XDF 写入同样必须拦。用户路径（PermissionController uid 10048、
             // shell cmd uid 2000）不受影响。
-            if (AppConfig.get().pmsAggressive
+            if (AppConfig.get().hSystemDesktopProtect
                     && (caller.startsWith("cn.xdf.") || caller.equals("system_server"))) {
                 XDFHook.logw(TAG, "BLOCKED (aggressive, xdf caller): " + head
                         + (targets.length() > 0 ? " " + targets : "") + filters);

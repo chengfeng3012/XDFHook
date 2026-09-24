@@ -61,7 +61,7 @@ final class PackageInstallerHooks {
     /** 拦截 boolean 返回值的方法：开关开 → 恒 true；关 → 原逻辑。 */
     private static Object interceptBool(XposedInterface.Chain chain, String what) {
         AppConfig cfg = AppConfig.get();
-        if (!cfg.enabled(AppConfig.K_MOD_PACKAGE_INSTALL)) {
+        if (!cfg.hookEnabled(AppConfig.SCOPE_PACKAGE_INSTALLER, AppConfig.H_INSTALL_UNLOCK)) {
             try {
                 return chain.proceed();
             } catch (Throwable t) {
@@ -79,7 +79,7 @@ final class PackageInstallerHooks {
      */
     private static Object interceptBypassRestrictions(XposedInterface.Chain chain) {
         AppConfig cfg = AppConfig.get();
-        if (!cfg.enabled(AppConfig.K_MOD_PACKAGE_INSTALL) || chain.getThisObject() == null) {
+        if (!cfg.hookEnabled(AppConfig.SCOPE_PACKAGE_INSTALLER, AppConfig.H_INSTALL_UNLOCK) || chain.getThisObject() == null) {
             try {
                 return chain.proceed();
             } catch (Throwable t) {

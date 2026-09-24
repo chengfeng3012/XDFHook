@@ -39,6 +39,36 @@ public final class AppConfig {
     /** remote preferences 分组名（两侧必须一致） */
     public static final String GROUP = "xdfhook_cfg";
 
+    /** 配置 schema 版本：>=2 为 per-scope 结构（scope + hook 单元）；1 为旧扁平键 */
+    public static final int VERSION = 2;
+    public static final String K_VERSION = "version";
+
+    /** scope 条目（LSPosed 作用域：system_server='system'，框架 UI='android'，其余为包名） */
+    public static final String SCOPE_SYSTEM = "system";
+    public static final String SCOPE_ANDROID = "android";
+    public static final String SCOPE_ZEUS = "cn.xdf.zeus";
+    public static final String SCOPE_SETTINGS = "com.android.settings";
+    public static final String SCOPE_LAUNCHER = "com.android.launcher3";
+    public static final String SCOPE_GALLERY = "com.android.gallery3d";
+    public static final String SCOPE_PACKAGE_INSTALLER = "com.android.packageinstaller";
+
+    /** hook 单元（per-scope 功能开关；键 = scopes.<scope>.hooks.<unit>） */
+    public static final String H_UNLOCK_CTRL = "unlockControl";     // 解除管控限制（system A 组 / zeus B 组）
+    public static final String H_SPOOF_DEVICE = "spoofDevice";      // 设备信息伪装（型号/SN，zeus）
+    public static final String H_HOME_UNLOCK = "homeUnlock";        // 默认桌面解锁（system PMS / launcher block）
+    public static final String H_DESKTOP_PROTECT = "desktopProtect"; // 桌面锁定防护（PMS 激进拦截）
+    public static final String H_IME_GUARD = "imeGuard";            // 输入法保护
+    public static final String H_SHARE_CHOOSER = "shareChooser";    // 分享面板修复
+    public static final String H_SETTINGS_UNLOCK = "settingsUnlock"; // 完整设置
+    public static final String H_RECENT_TASKS = "recentTasks";      // 桌面增强（最近任务）
+    public static final String H_GALLERY_EDIT = "galleryEdit";      // 图片编辑
+    public static final String H_INSTALL_UNLOCK = "installUnlock";  // 自由安装
+
+    /** scope hook 单元的配置键名 */
+    public static String hookKey(String scope, String hook) {
+        return "scopes." + scope + ".hooks." + hook;
+    }
+
     public static final String PATH = "/data/local/tmp/XDFHook.cfg";
 
     public static final String K_MASTER = "master";
@@ -78,17 +108,28 @@ public final class AppConfig {
     public static final int MAX_LOG_CAP_KB = 102400;
 
     public boolean master = true;
-    public boolean modZeus = true;
-    public boolean modSettings = true;
-    public boolean modChooser = true;
-    public boolean modLauncher = true;
-    public boolean modGallery = true;
-    public boolean modHome = true;
-    public boolean modInputMethod = true;
-    /** 解除软件包安装程序（PackageInstaller）的安装限制 */
-    public boolean modPackageInstall = true;
-    /** HOME 解锁探针的激进拦截：拦截一切指向 XDF 桌面的 preferred 写入 */
-    public boolean pmsAggressive = false;
+
+    // ---- per-scope hook 单元开关（全部读出，各进程按需取用） ----
+    // system
+    public boolean hSystemUnlockControl = true;   // 解除管控限制（framework 放行）
+    public boolean hSystemHomeUnlock = true;      // 默认桌面解锁（PMS 探针）
+    public boolean hSystemImeGuard = true;        // 输入法保护
+    public boolean hSystemDesktopProtect = false; // 桌面锁定防护（激进，原 pms_aggressive）
+    // android
+    public boolean hAndroidShareChooser = true;   // 分享面板修复
+    // zeus
+    public boolean hZeusUnlockControl = true;     // 解除管控限制（检查链/云控）
+    public boolean hZeusSpoofDevice = true;       // 设备信息伪装
+    // settings
+    public boolean hSettingsUnlock = true;        // 完整设置
+    // launcher
+    public boolean hLauncherRecentTasks = true;   // 桌面增强
+    public boolean hLauncherHomeUnlock = true;    // 默认桌面解锁（launcher block）
+    // gallery
+    public boolean hGalleryEdit = true;           // 图片编辑
+    // packageinstaller
+    public boolean hInstallUnlock = true;         // 自由安装
+
     public int logLevel = Log.INFO;
     public int inputMethodMode = 0; // 0=固化, 1=黑名单
     public String inputMethodList = "";
@@ -103,9 +144,6 @@ public final class AppConfig {
     /** 底层通道：null = 未初始化或降级到文件 */
     private static volatile SharedPreferences sRemote;
     private static volatile boolean sRemoteTried;
-    /** 旧配置是否已迁移到 remote */
-    /** 旧配置是否已迁移到 remote */
-    private static volatile boolean sMigrated;
     /** 文件模式 TTL 缓存 */
     private static volatile AppConfig sFileCache;
     private static volatile long sFileLoadedAt;
@@ -179,7 +217,7 @@ public final class AppConfig {
                 // fork 的 hook 侧 RemotePreferences.edit() 直接抛 UOE（只读），
                 // 一次性迁移只有 UI 侧能写——hook 侧跳过（审查结论 6）
                 if (api == null) {
-                    migrateFromLegacyFileIfNeeded(p);
+                    migrateToLatest(p);
                 }
                 // 静态强引用（审查结论 5）：部分实现用弱引用持有 listener
                 try {
@@ -242,40 +280,97 @@ public final class AppConfig {
         }
     }
 
-    /** remote 配置为空且旧 cfg 文件有内容时，做一次导入（按正确类型写入） */
-    private static void migrateFromLegacyFileIfNeeded(SharedPreferences p) {
-        if (sMigrated) {
-            return;
-        }
-        sMigrated = true;
+    /**
+     * 配置迁移（UI 侧写通道执行一次）：按 version 链式升级。
+     * 通用框架：future v2→v3 只需在 MAPPERS 追加新的 ConfigMapper 实现。
+     */
+    private static void migrateToLatest(SharedPreferences p) {
         try {
-            if (!p.getAll().isEmpty()) {
-                return; // remote 已有配置，无需迁移
+            if (p.getInt(K_VERSION, 0) >= VERSION) {
+                return;
             }
-            Properties legacy;
-            try {
-                legacy = loadProps();
-            } catch (Throwable t) {
-                return; // 旧文件不存在/不可读
-            }
-            SharedPreferences.Editor e = p.edit();
-            for (String k : new String[]{K_MASTER, K_ZEUS, K_SETTINGS, K_CHOOSER,
-                    K_LAUNCHER, K_GALLERY, K_HOME, K_AGGRESSIVE}) {
-                String v = legacy.getProperty(k);
-                if (v != null) {
-                    // 必须写 Boolean 类型：读取端 getBoolean 直接类型强转
-                    e.putBoolean(k, "true".equalsIgnoreCase(v.trim()));
+            synchronized (AppConfig.class) {
+                if (p.getInt(K_VERSION, 0) >= VERSION) {
+                    return;
                 }
-            }
-            String lv = legacy.getProperty(K_LOG_LEVEL);
-            if (lv != null) {
+                Properties legacy = null;
                 try {
-                    e.putInt(K_LOG_LEVEL, clampLevel(Integer.parseInt(lv.trim())));
-                } catch (NumberFormatException ignored) {
+                    legacy = loadProps();
+                } catch (Throwable ignored) {
+                }
+                int cur = p.getInt(K_VERSION, 0);
+                for (ConfigMapper m : MAPPERS) {
+                    if (cur == m.from() && m.to() > cur) {
+                        SharedPreferences.Editor e = p.edit();
+                        m.migrate(p, legacy, e);
+                        e.putInt(K_VERSION, m.to());
+                        e.apply();
+                        cur = m.to();
+                    }
                 }
             }
-            e.apply();
         } catch (Throwable ignored) {
+        }
+    }
+
+    /** 配置迁移器：FROM → TO 的键重映射（链式执行） */
+    interface ConfigMapper {
+        int from();
+
+        int to();
+
+        void migrate(SharedPreferences p, Properties legacy, SharedPreferences.Editor e);
+    }
+
+    private static final ConfigMapper[] MAPPERS = {
+            new V1ToV2Mapper(),
+    };
+
+    /** v1 旧扁平键（K_MOD_xxx、K_MASTER …）迁移为 v2 per-scope hook 单元键 */
+    static final class V1ToV2Mapper implements ConfigMapper {
+        @Override
+        public int from() {
+            return 0; // 第一代配置无 version 字段
+        }
+
+        @Override
+        public int to() {
+            return VERSION;
+        }
+
+        @Override
+        public void migrate(SharedPreferences p, Properties legacy,
+                            SharedPreferences.Editor e) {
+            e.putBoolean(hookKey(SCOPE_SYSTEM, H_UNLOCK_CTRL), v(p, legacy, K_ZEUS, true));
+            e.putBoolean(hookKey(SCOPE_ZEUS, H_UNLOCK_CTRL), v(p, legacy, K_ZEUS, true));
+            e.putBoolean(hookKey(SCOPE_ZEUS, H_SPOOF_DEVICE), v(p, legacy, K_ZEUS, true));
+            e.putBoolean(hookKey(SCOPE_SETTINGS, H_SETTINGS_UNLOCK), v(p, legacy, K_SETTINGS, true));
+            e.putBoolean(hookKey(SCOPE_ANDROID, H_SHARE_CHOOSER), v(p, legacy, K_CHOOSER, true));
+            e.putBoolean(hookKey(SCOPE_LAUNCHER, H_RECENT_TASKS), v(p, legacy, K_LAUNCHER, true));
+            e.putBoolean(hookKey(SCOPE_SYSTEM, H_HOME_UNLOCK), v(p, legacy, K_HOME, true));
+            e.putBoolean(hookKey(SCOPE_LAUNCHER, H_HOME_UNLOCK), v(p, legacy, K_HOME, true));
+            e.putBoolean(hookKey(SCOPE_GALLERY, H_GALLERY_EDIT), v(p, legacy, K_GALLERY, true));
+            e.putBoolean(hookKey(SCOPE_SYSTEM, H_IME_GUARD), v(p, legacy, K_MOD_INPUT_METHOD, true));
+            e.putBoolean(hookKey(SCOPE_PACKAGE_INSTALLER, H_INSTALL_UNLOCK),
+                    v(p, legacy, K_MOD_PACKAGE_INSTALL, true));
+            // 激进拦截默认关闭：只有显式开启过才迁移
+            if (v(p, legacy, K_AGGRESSIVE, false)) {
+                e.putBoolean(hookKey(SCOPE_SYSTEM, H_DESKTOP_PROTECT), true);
+            }
+            // master / 日志 / 输入法参数 / zeus 型号SN 键名保留不变（K_LOG_* 等）
+        }
+
+        private boolean v(SharedPreferences p, Properties legacy, String key, boolean def) {
+            if (p.contains(key)) {
+                return p.getBoolean(key, def);
+            }
+            if (legacy != null) {
+                String s = legacy.getProperty(key);
+                if (s != null) {
+                    return "true".equalsIgnoreCase(s.trim());
+                }
+            }
+            return def;
         }
     }
 
@@ -310,15 +405,25 @@ public final class AppConfig {
         AppConfig c = new AppConfig();
         try {
             c.master = p.getBoolean(K_MASTER, true);
-            c.modZeus = p.getBoolean(K_ZEUS, true);
-            c.modSettings = p.getBoolean(K_SETTINGS, true);
-            c.modChooser = p.getBoolean(K_CHOOSER, true);
-            c.modLauncher = p.getBoolean(K_LAUNCHER, true);
-            c.modGallery = p.getBoolean(K_GALLERY, true);
-            c.modHome = p.getBoolean(K_HOME, true);
-            c.modInputMethod = p.getBoolean(K_MOD_INPUT_METHOD, true);
-            c.modPackageInstall = p.getBoolean(K_MOD_PACKAGE_INSTALL, true);
-            c.pmsAggressive = p.getBoolean(K_AGGRESSIVE, false);
+            // system
+            c.hSystemUnlockControl = p.getBoolean(hookKey(SCOPE_SYSTEM, H_UNLOCK_CTRL), true);
+            c.hSystemHomeUnlock = p.getBoolean(hookKey(SCOPE_SYSTEM, H_HOME_UNLOCK), true);
+            c.hSystemImeGuard = p.getBoolean(hookKey(SCOPE_SYSTEM, H_IME_GUARD), true);
+            c.hSystemDesktopProtect = p.getBoolean(hookKey(SCOPE_SYSTEM, H_DESKTOP_PROTECT), false);
+            // android
+            c.hAndroidShareChooser = p.getBoolean(hookKey(SCOPE_ANDROID, H_SHARE_CHOOSER), true);
+            // zeus
+            c.hZeusUnlockControl = p.getBoolean(hookKey(SCOPE_ZEUS, H_UNLOCK_CTRL), true);
+            c.hZeusSpoofDevice = p.getBoolean(hookKey(SCOPE_ZEUS, H_SPOOF_DEVICE), true);
+            // settings
+            c.hSettingsUnlock = p.getBoolean(hookKey(SCOPE_SETTINGS, H_SETTINGS_UNLOCK), true);
+            // launcher
+            c.hLauncherRecentTasks = p.getBoolean(hookKey(SCOPE_LAUNCHER, H_RECENT_TASKS), true);
+            c.hLauncherHomeUnlock = p.getBoolean(hookKey(SCOPE_LAUNCHER, H_HOME_UNLOCK), true);
+            // gallery
+            c.hGalleryEdit = p.getBoolean(hookKey(SCOPE_GALLERY, H_GALLERY_EDIT), true);
+            // packageinstaller
+            c.hInstallUnlock = p.getBoolean(hookKey(SCOPE_PACKAGE_INSTALLER, H_INSTALL_UNLOCK), true);
             c.logLevel = clampLevel(p.getInt(K_LOG_LEVEL, Log.INFO));
             c.inputMethodMode = clampInputMethodMode(p.getInt(K_INPUT_METHOD_MODE, 0));
             c.inputMethodList = p.getString(K_INPUT_METHOD_LIST, "");
@@ -438,15 +543,18 @@ public final class AppConfig {
         try {
             Properties p = loadProps();
             c.master = getP(p, K_MASTER, true);
-            c.modZeus = getP(p, K_ZEUS, true);
-            c.modSettings = getP(p, K_SETTINGS, true);
-            c.modChooser = getP(p, K_CHOOSER, true);
-            c.modLauncher = getP(p, K_LAUNCHER, true);
-            c.modGallery = getP(p, K_GALLERY, true);
-            c.modHome = getP(p, K_HOME, true);
-            c.modInputMethod = getP(p, K_MOD_INPUT_METHOD, true);
-            c.modPackageInstall = getP(p, K_MOD_PACKAGE_INSTALL, true);
-            c.pmsAggressive = getP(p, K_AGGRESSIVE, false);
+            c.hSystemUnlockControl = getP(p, hookKey(SCOPE_SYSTEM, H_UNLOCK_CTRL), true);
+            c.hSystemHomeUnlock = getP(p, hookKey(SCOPE_SYSTEM, H_HOME_UNLOCK), true);
+            c.hSystemImeGuard = getP(p, hookKey(SCOPE_SYSTEM, H_IME_GUARD), true);
+            c.hSystemDesktopProtect = getP(p, hookKey(SCOPE_SYSTEM, H_DESKTOP_PROTECT), false);
+            c.hAndroidShareChooser = getP(p, hookKey(SCOPE_ANDROID, H_SHARE_CHOOSER), true);
+            c.hZeusUnlockControl = getP(p, hookKey(SCOPE_ZEUS, H_UNLOCK_CTRL), true);
+            c.hZeusSpoofDevice = getP(p, hookKey(SCOPE_ZEUS, H_SPOOF_DEVICE), true);
+            c.hSettingsUnlock = getP(p, hookKey(SCOPE_SETTINGS, H_SETTINGS_UNLOCK), true);
+            c.hLauncherRecentTasks = getP(p, hookKey(SCOPE_LAUNCHER, H_RECENT_TASKS), true);
+            c.hLauncherHomeUnlock = getP(p, hookKey(SCOPE_LAUNCHER, H_HOME_UNLOCK), true);
+            c.hGalleryEdit = getP(p, hookKey(SCOPE_GALLERY, H_GALLERY_EDIT), true);
+            c.hInstallUnlock = getP(p, hookKey(SCOPE_PACKAGE_INSTALLER, H_INSTALL_UNLOCK), true);
             c.logLevel = clampLevel(getI(p, K_LOG_LEVEL, Log.INFO));
             c.inputMethodMode = clampInputMethodMode(getI(p, K_INPUT_METHOD_MODE, 0));
             c.inputMethodList = p.getProperty(K_INPUT_METHOD_LIST, "");
@@ -522,30 +630,30 @@ public final class AppConfig {
         }
     }
 
-    /** 子模块开关查询（按 cfg 键） */
-    public boolean enabled(String key) {
-        switch (key) {
-            case K_MASTER:
-                return master;
-            case K_ZEUS:
-                return modZeus;
-            case K_SETTINGS:
-                return modSettings;
-            case K_CHOOSER:
-                return modChooser;
-            case K_LAUNCHER:
-                return modLauncher;
-            case K_GALLERY:
-                return modGallery;
-            case K_HOME:
-                return modHome;
-            case K_MOD_INPUT_METHOD:
-                return modInputMethod;
-            case K_MOD_PACKAGE_INSTALL:
-                return modPackageInstall;
-            default:
-                return true;
+    /** 查询 scope 上是否启用某 hook 单元（UI/各进程通用） */
+    public boolean hookEnabled(String scope, String hook) {
+        String k = hookKey(scope, hook);
+        if (SCOPE_SYSTEM.equals(scope)) {
+            if (H_UNLOCK_CTRL.equals(hook)) return hSystemUnlockControl;
+            if (H_HOME_UNLOCK.equals(hook)) return hSystemHomeUnlock;
+            if (H_IME_GUARD.equals(hook)) return hSystemImeGuard;
+            if (H_DESKTOP_PROTECT.equals(hook)) return hSystemDesktopProtect;
+        } else if (SCOPE_ANDROID.equals(scope)) {
+            if (H_SHARE_CHOOSER.equals(hook)) return hAndroidShareChooser;
+        } else if (SCOPE_ZEUS.equals(scope)) {
+            if (H_UNLOCK_CTRL.equals(hook)) return hZeusUnlockControl;
+            if (H_SPOOF_DEVICE.equals(hook)) return hZeusSpoofDevice;
+        } else if (SCOPE_SETTINGS.equals(scope)) {
+            if (H_SETTINGS_UNLOCK.equals(hook)) return hSettingsUnlock;
+        } else if (SCOPE_LAUNCHER.equals(scope)) {
+            if (H_RECENT_TASKS.equals(hook)) return hLauncherRecentTasks;
+            if (H_HOME_UNLOCK.equals(hook)) return hLauncherHomeUnlock;
+        } else if (SCOPE_GALLERY.equals(scope)) {
+            if (H_GALLERY_EDIT.equals(hook)) return hGalleryEdit;
+        } else if (SCOPE_PACKAGE_INSTALLER.equals(scope)) {
+            if (H_INSTALL_UNLOCK.equals(hook)) return hInstallUnlock;
         }
+        return true;
     }
 
     /** 获取整型配置值（UI 侧使用） */
