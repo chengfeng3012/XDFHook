@@ -11,7 +11,8 @@ def appStoreFile = System.getenv('APP_KEYSTORE_FILE')
 def appStorePass = System.getenv('APP_KEYSTORE_PASS')
 def appKeyAlias = System.getenv('APP_KEY_ALIAS')
 def appKeyPass = System.getenv('APP_KEY_PASS')
-def releaseSigningReady = appStoreFile && appStorePass && appKeyAlias && appKeyPass
+// PKCS12 keystore 同密码：signing 就绪仅需 storeFile/storePass/alias（keyPass 已废弃使用）
+def releaseSigningReady = appStoreFile && appStorePass && appKeyAlias
 
 android {
     namespace 'cn.cf3012.xdf'
@@ -34,7 +35,9 @@ android {
                 storeFile file(appStoreFile)
                 storePassword appStorePass
                 keyAlias appKeyAlias
-                keyPassword appKeyPass
+                // keystore 为 PKCS12：store/key 密码强制一致，keyPassword 必须用
+                // storePassword，否则签名时 "Given final block not properly padded"
+                keyPassword appStorePass
             }
         }
     }
