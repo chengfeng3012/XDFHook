@@ -2,6 +2,7 @@ package cn.cf3012.xdf.ui
 
 import android.content.Context
 import android.view.inputmethod.InputMethodManager
+import androidx.activity.compose.BackHandler
 import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -111,6 +112,9 @@ fun ScopeDetailScreen(
     val inScope = remember(scopeTick) { ScopeManager.isInScope(scope) }
     val hooks = remember { hooksFor(scope) }
     var param by remember { mutableStateOf<Param?>(null) }
+
+    // 返回键：先退出详情页，而不是直接退出 App
+    BackHandler(enabled = true) { onBack() }
 
     fun setHook(hook: String, checked: Boolean) {
         if (AppConfig.setBoolean(AppConfig.hookKey(scope, hook), checked)) {

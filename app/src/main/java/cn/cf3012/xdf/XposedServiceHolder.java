@@ -30,6 +30,11 @@ public final class XposedServiceHolder {
     }
 
     static void setService(XposedService service) {
+        // 同一实例重复回调（daemon 重发 binder）直接忽略：
+        // 否则每次都会 notifyChanged → MainActivity.refreshTick++ → UI 反复刷新
+        if (sService == service) {
+            return;
+        }
         sService = service;
         DebugProbe.log(service != null
                 ? "XposedService BOUND (binder delivered)"

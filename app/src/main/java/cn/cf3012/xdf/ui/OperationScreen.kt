@@ -1,9 +1,12 @@
 package cn.cf3012.xdf.ui
 
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
+import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,6 +40,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.io.File
+
 import cn.cf3012.xdf.R
 import cn.cf3012.xdf.Root
 import top.yukonga.miuix.kmp.basic.Button
@@ -121,31 +126,75 @@ private val DANGER_ACTIONS = listOf(
         R.string.op_confirm_sysui_title, R.string.op_confirm_sysui_msg, CMD_KILL_SYSUI),
 )
 
+/* ---------------- root 状态缓存（进程内） ---------------- */
+
+/**
+ * root 探测结果在进程内缓存。
+ *
+ * 默认关闭且**不主动探测**（进入页面不会弹 Magisk 授权）：
+ *   - 用户打开 root 开关 → probe() 请求授权；成功则 ok=true（面板出现），
+ *     失败则保持关闭（开关自动弹回）
+ *   - 用户关闭 root 开关 → clear() 隐藏面板，不再请求 root
+ * su -c id 会触发 Magisk 提示，因此探测只由用户操作驱动，绝不随重组重复发起。
+ */
+private object RootState {
+    var ok by mutableStateOf(false)
+    var probing by mutableStateOf(false)
+
+    fun probe() {
+        if (probing) return
+        probing = true
+        Thread {
+            val r = Root.available()
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                ok = r
+                probing = false
+            }
+        }.start()
+    }
+
+    /** 用户主动关闭：隐藏面板，不再请求 root */
+    fun clear() {
+        ok = false
+    }
+}
+
 /* ---------------- 页面 ---------------- */
 
 @Composable
 fun OperationScreen(tick: Int, context: Context) {
-    var rootOk by remember { mutableStateOf(false) }
-    var probing by remember { mutableStateOf(true) }
+    val rootOk = RootState.ok
+    val probing = RootState.probing
     var toggleLabels by remember { mutableStateOf<Map<Int, Int>>(emptyMap()) }
     var showOrient by remember { mutableStateOf(false) }
     var showSilent by remember { mutableStateOf(false) }
     var dangerTarget by remember { mutableStateOf<DangerAction?>(null) }
     var apkPath by remember { mutableStateOf("") }
 
-    // root 探测
-    LaunchedEffect(tick) {
-        probing = true
-        rootOk = Root.available()
-        probing = false
+    // 选择 APK：系统文件选择器（返回 content:// URI，复制到缓存后回填真实路径）
+    val apkPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent(),
+    ) { uri: Uri? ->
+        uri?.let {
+            val copied = runCatching { copyApkToCache(context, it) }.getOrNull()
+            if (copied != null) {
+                apkPath = copied
+            } else {
+                Toast.makeText(context, "读取所选 APK 失败", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
-    // toggle 状态后台读取（原 label 显示"将切换到的状态"）
-    LaunchedEffect(tick, rootOk) {
-        if (!rootOk) return@LaunchedEffect
+
+
+    // toggle 当前状态：仅在 root 可用时读取一次，不随 tick 重跑
+    LaunchedEffect(rootOk) {
+        if (!rootOk) {
+            toggleLabels = emptyMap()
+            return@LaunchedEffect
+        }
         val labels = mutableMapOf<Int, Int>()
         FUNC_ACTIONS.filter { it.toggleType != T_NONE }.forEach { a ->
             val v = Root.get(a.getCmd.orEmpty()).trim()
-            // 圆钮中央显示【当前状态】：值命中 onValue（开/深/手势）→ 显示对应当前态文字
             labels[a.title] = if (v == a.onValue) a.labelOff else a.labelOn
         }
         toggleLabels = labels
@@ -173,8 +222,15 @@ fun OperationScreen(tick: Int, context: Context) {
         item {
             SwitchPreference(
                 checked = rootOk,
-                onCheckedChange = { },
-                enabled = false,
+                // 开 = 请求 root 授权（失败自动弹回关闭）；关 = 隐藏全部操作面板
+                onCheckedChange = { checked ->
+                    if (checked) {
+                        if (!probing) RootState.probe()
+                    } else {
+                        RootState.clear()
+                    }
+                },
+                enabled = !probing,
                 title = stringResource(R.string.op_root_title),
                 summary = when {
                     probing -> stringResource(R.string.op_root_checking)
@@ -183,14 +239,17 @@ fun OperationScreen(tick: Int, context: Context) {
                 },
             )
         }
-        item {
-            Text(
-                text = stringResource(R.string.op_root_footnote),
-                fontSize = 12.sp,
-                color = Color(0xFF8A8A8E),
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-            )
+        if (!rootOk) {
+            item {
+                Text(
+                    text = stringResource(R.string.op_root_hint),
+                    fontSize = 12.sp,
+                    color = Color(0xFF8A8A8E),
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                )
+            }
         }
+        if (rootOk) {
         item {
             SmallTitle(text = stringResource(R.string.op_section_function))
         }
@@ -220,7 +279,7 @@ fun OperationScreen(tick: Int, context: Context) {
                                     action = a,
                                     labelRes = if (a.toggleType != T_NONE)
                                         toggleLabels[a.title] ?: 0 else 0,
-                                    enabled = rootOk || a.cmd != null || a.orientationMenu,
+                                    enabled = rootOk,
                                     onClick = {
                                         when {
                                             a.orientationMenu -> showOrient = true
@@ -269,6 +328,7 @@ fun OperationScreen(tick: Int, context: Context) {
                 color = Color(0xFF8A8A8E),
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
+        }
         }
     }
 
@@ -326,12 +386,23 @@ fun OperationScreen(tick: Int, context: Context) {
             onDismissRequest = { showSilent = false },
             title = { Text(stringResource(R.string.op_silent_install_title)) },
             text = {
-                OutlinedTextField(
-                    value = apkPath,
-                    onValueChange = { apkPath = it },
-                    placeholder = { Text(stringResource(R.string.op_silent_install_hint)) },
-                    singleLine = true,
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = apkPath,
+                        onValueChange = { apkPath = it },
+                        placeholder = { Text(stringResource(R.string.op_silent_install_hint)) },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        text = stringResource(R.string.op_silent_install_pick),
+                        fontSize = 14.sp,
+                        color = Color(0xFF3482FF),
+                        modifier = Modifier
+                            .clickable { apkPicker.launch("application/vnd.android.package-archive") }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                    )
+                }
             },
             confirmButton = {
                 TextButton(onClick = okClick) { Text(stringResource(android.R.string.ok)) }
@@ -472,4 +543,19 @@ private fun DangerCircle(modifier: Modifier = Modifier, action: DangerAction, en
             modifier = Modifier.padding(top = 4.dp, start = 2.dp, end = 2.dp),
         )
     }
+}
+
+/** 把 content:// URI 指向的 APK 复制到缓存目录，返回真实文件路径（pm install 需要真实路径） */
+private fun copyApkToCache(context: Context, uri: Uri): String? {
+    val name = runCatching {
+        context.contentResolver.query(uri, null, null, null, null)?.use { c ->
+            val idx = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            if (idx >= 0 && c.moveToFirst()) c.getString(idx) else null
+        }
+    }.getOrNull() ?: "picked.apk"
+    val out = File(context.cacheDir, name)
+    context.contentResolver.openInputStream(uri)?.use { input ->
+        out.outputStream().use { output -> input.copyTo(output) }
+    } ?: return null
+    return out.absolutePath
 }

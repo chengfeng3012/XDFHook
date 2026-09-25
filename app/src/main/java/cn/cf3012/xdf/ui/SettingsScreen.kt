@@ -6,6 +6,10 @@ import android.net.Uri
 import android.os.Build
 import android.widget.Toast
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -50,9 +54,22 @@ private sealed class LogDialog {
 
 private sealed class UpdateState {
     object Checking : UpdateState()
-    data class Found(val tag: String, val apkUrl: String) : UpdateState()
-    data class Latest(val tag: String) : UpdateState()
+    data class Found(
+        val tag: String,
+        val versionName: String,
+        val note: String,
+        val apkUrl: String,
+        val releaseUrl: String,
+    ) : UpdateState()
+    data class Latest(val displayName: String, val versionCode: Int) : UpdateState()
     data class Error(val msg: String) : UpdateState()
+}
+
+/** 下载/安装过程态（覆盖在更新弹窗之上） */
+private sealed class BusyState {
+    data class Downloading(val percent: Int) : BusyState()
+    object Installing : BusyState()
+    data class Message(val text: String) : BusyState()
 }
 
 /** 选项页：日志设置 + 关于/更新/仓库（其余功能已迁入各 scope 详情页） */
@@ -64,6 +81,40 @@ fun SettingsScreen(tick: Int, context: Context) {
     var dialog by remember { mutableStateOf<LogDialog?>(null) }
     var about by remember { mutableStateOf(false) }
     var updateState by remember { mutableStateOf<UpdateState?>(null) }
+    var busy by remember { mutableStateOf<BusyState?>(null) }
+
+    // 下载 APK（可选：下载完直接 root 静默安装）
+    fun startDownload(found: UpdateState.Found, thenInstall: Boolean) {
+        busy = BusyState.Downloading(0)
+        ApkUpdater.download(
+            context, found.apkUrl,
+            onProgress = { got, total ->
+                if (total > 0) {
+                    busy = BusyState.Downloading(((got * 100) / total).toInt())
+                }
+            },
+            onDone = { file, err ->
+                if (file == null) {
+                    busy = BusyState.Message(err ?: "下载失败")
+                } else if (!thenInstall) {
+                    busy = BusyState.Message(
+                        context.getString(R.string.update_downloaded_fmt, file.absolutePath),
+                    )
+                } else {
+                    busy = BusyState.Installing
+                    ApkUpdater.installWithRoot(context, file) { ok, msg ->
+                        busy = if (ok) {
+                            BusyState.Message(context.getString(R.string.update_install_ok))
+                        } else {
+                            BusyState.Message(
+                                context.getString(R.string.update_install_fail_fmt, msg),
+                            )
+                        }
+                    }
+                }
+            },
+        )
+    }
 
     fun setOr(key: String, value: Boolean) {
         if (AppConfig.setBoolean(key, value)) {
@@ -96,14 +147,19 @@ fun SettingsScreen(tick: Int, context: Context) {
         item {
             ArrowPreference(
                 title = stringResource(R.string.opt_log_cap),
-                summary = stringResource(R.string.opt_log_cap_desc),
+                summary = "当前：" + stringResource(
+                    R.string.log_cap_value_fmt, cfg.logFileCapKb,
+                ),
                 onClick = { dialog = LogDialog.Cap },
             )
         }
         item {
+            val levelNameRes = LEVEL_NAMES.getOrNull(
+                LEVEL_VALUES.indexOf(cfg.logLevel),
+            ) ?: R.string.level_i
             ArrowPreference(
                 title = stringResource(R.string.opt_log_level),
-                summary = stringResource(R.string.opt_log_level_desc),
+                summary = "当前：" + stringResource(levelNameRes),
                 onClick = { dialog = LogDialog.Level },
             )
         }
@@ -128,11 +184,17 @@ fun SettingsScreen(tick: Int, context: Context) {
                             apkUrl: String,
                             note: String,
                         ) {
-                            updateState = UpdateState.Found(latestTag, apkUrl)
+                            updateState = UpdateState.Found(
+                                latestTag, versionName, note, apkUrl,
+                                "https://github.com/chengfeng3012/XDFHook/releases/tag/$latestTag",
+                            )
                         }
 
                         override fun onLatest(latestTag: String, versionCode: Int) {
-                            updateState = UpdateState.Latest(latestTag)
+                            // update_latest 自带 "v" 前缀，这里传不带 v 的展示名
+                            updateState = UpdateState.Latest(
+                                latestTag.removePrefix("v"), versionCode,
+                            )
                         }
 
                         override fun onError(message: String) {
@@ -220,6 +282,30 @@ fun SettingsScreen(tick: Int, context: Context) {
         null -> Unit
     }
 
+    busy?.let { b ->
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(stringResource(R.string.action_update)) },
+            text = {
+                when (b) {
+                    is BusyState.Downloading -> Text(
+                        stringResource(
+                            R.string.update_downloading_fmt, b.percent,
+                        ),
+                    )
+                    is BusyState.Installing ->
+                        Text(stringResource(R.string.update_installing))
+                    is BusyState.Message -> Text(b.text)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { busy = null }) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            },
+        )
+    }
+
     if (about) {
         AlertDialog(
             onDismissRequest = { about = false },
@@ -244,7 +330,7 @@ fun SettingsScreen(tick: Int, context: Context) {
         when (state) {
             is UpdateState.Checking -> AlertDialog(
                 onDismissRequest = { updateState = null },
-                title = { Text(stringResource(R.string.update_dialog)) },
+                title = { Text(stringResource(R.string.action_update)) },
                 text = { Text(stringResource(R.string.update_checking)) },
                 confirmButton = {},
                 dismissButton = {
@@ -255,26 +341,74 @@ fun SettingsScreen(tick: Int, context: Context) {
             )
             is UpdateState.Found -> AlertDialog(
                 onDismissRequest = { updateState = null },
-                title = { Text(stringResource(R.string.update_found)) },
-                text = { Text(stringResource(R.string.update_found_body, state.tag, "", "")) },
-                confirmButton = {
-                    TextButton(onClick = {
-                        openUrl(context, state.apkUrl)
-                        updateState = null
-                    }) {
-                        Text(stringResource(R.string.update_download))
+                title = { Text(stringResource(R.string.update_available)) },
+                text = {
+                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                        Text(
+                            text = stringResource(
+                                R.string.update_found_body,
+                                state.tag,
+                                state.versionName,
+                                "",
+                            ).trim(),
+                            fontSize = 14.sp,
+                            color = androidx.compose.ui.graphics.Color(0xFF1C1C1E),
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        )
+                        if (state.note.isNotBlank()) {
+                            MarkdownText(
+                                markdown = state.note,
+                                fontSize = 12.sp,
+                                modifier = Modifier.padding(top = 6.dp),
+                            )
+                        }
                     }
                 },
-                dismissButton = {
-                    TextButton(onClick = { updateState = null }) {
-                        Text(stringResource(android.R.string.cancel))
+                confirmButton = {
+                    // 四个动作：取消 / 打开 Release 页 / 下载 APK / 下载并安装
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            TextButton(onClick = { updateState = null }) {
+                                Text(stringResource(android.R.string.cancel))
+                            }
+                            TextButton(onClick = {
+                                openUrl(context, state.releaseUrl)
+                                updateState = null
+                            }) {
+                                Text(stringResource(R.string.update_open_release), fontSize = 12.sp)
+                            }
+                        }
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                        ) {
+                            TextButton(onClick = { startDownload(state, thenInstall = false) }) {
+                                Text(stringResource(R.string.update_download_only), fontSize = 12.sp)
+                            }
+                            TextButton(onClick = { startDownload(state, thenInstall = true) }) {
+                                Text(
+                                    stringResource(R.string.update_download_install),
+                                    fontSize = 12.sp,
+                                    color = androidx.compose.ui.graphics.Color(0xFF3482FF),
+                                )
+                            }
+                        }
                     }
                 },
             )
             is UpdateState.Latest -> AlertDialog(
                 onDismissRequest = { updateState = null },
-                title = { Text(stringResource(R.string.update_dialog)) },
-                text = { Text(stringResource(R.string.update_latest, state.tag, versionCode(context))) },
+                title = { Text(stringResource(R.string.action_update)) },
+                text = {
+                    Text(
+                        stringResource(
+                            R.string.update_latest, state.displayName, state.versionCode,
+                        ),
+                    )
+                },
                 confirmButton = {
                     TextButton(onClick = { updateState = null }) {
                         Text(stringResource(android.R.string.ok))
@@ -283,7 +417,7 @@ fun SettingsScreen(tick: Int, context: Context) {
             )
             is UpdateState.Error -> AlertDialog(
                 onDismissRequest = { updateState = null },
-                title = { Text(stringResource(R.string.update_dialog)) },
+                title = { Text(stringResource(R.string.action_update)) },
                 text = { Text(state.msg) },
                 confirmButton = {
                     TextButton(onClick = { updateState = null }) {

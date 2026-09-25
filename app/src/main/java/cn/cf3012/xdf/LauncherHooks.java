@@ -78,14 +78,15 @@ final class LauncherHooks {
                 XDFHook.hook(load, chain -> {
                     Object result = chain.proceed();
                     if (result instanceof List) {
-                        XDFHook.logi(TAG, "loadTasksInBackground -> "
+                        // 高频调用，降为 verbose 避免刷屏
+                        XDFHook.logv(TAG, "loadTasksInBackground -> "
                                 + ((List<?>) result).size() + " tasks");
                     }
                     return result;
                 });
-                XDFHook.logi(TAG, "hooked: RecentTasksList.loadTasksInBackground (diagnostic)");
+                XDFHook.logv(TAG, "hooked: RecentTasksList.loadTasksInBackground (diagnostic)");
             } catch (Throwable t) {
-                XDFHook.logw(TAG, "loadTasksInBackground skipped: " + t);
+                XDFHook.logv(TAG, "loadTasksInBackground skipped: " + t);
             }
 
             XDFHook.logi(TAG, "Launcher3 hooks installed");

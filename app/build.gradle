@@ -25,8 +25,8 @@ android {
         // 设备 XDF-N1 为 Android 10 (API 29)，targetSdk 与 OS 一致，零 compat 层
         // Android 10 (API 29) 设备兼容；向上升级仅影响新机型行为
         targetSdk 34
-        versionCode 14
-        versionName "1.0.14"
+        versionCode 15
+        versionName "1.0.15"
     }
 
     signingConfigs {
@@ -127,6 +127,8 @@ dependencies {
     implementation 'org.jetbrains.compose.material3:material3:1.12.0-alpha03'
     // Android 侧 Compose 宿主（setContent 需要）
     implementation 'androidx.activity:activity-compose:1.9.3'
+    // commonmark：Release 更新说明 Markdown 渲染（纯解析库，输出 AnnotatedString）
+    implementation 'org.commonmark:commonmark:0.24.0'
     // Miuix：HyperOS 风格组件库 / 设置项组件 / 图标
     implementation 'top.yukonga.miuix.kmp:miuix-ui:0.9.4'
     implementation 'top.yukonga.miuix.kmp:miuix-preference:0.9.4'
