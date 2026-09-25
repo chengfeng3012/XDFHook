@@ -32,7 +32,8 @@ jobs:
       - name: Accept SDK licenses & install needed components
         run: |
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
-          sdkmanager "platforms;android-30" "build-tools;30.0.3" >/dev/null 2>&1 || echo "sdkmanager done (best-effort)"
+          # 项目已升级 AGP 9.4 / compileSdk 37（默认 build-tools 36.0.0）
+          sdkmanager "platforms;android-37" "build-tools;36.0.0" >/dev/null 2>&1 || echo "sdkmanager done (best-effort)"
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
