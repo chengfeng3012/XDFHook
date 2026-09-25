@@ -26,10 +26,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Accept SDK licenses & install needed components
+        # ubuntu-latest 自带 Android SDK（ANDROID_SDK_ROOT + cmdline-tools），
+        # 不再用 setup-android action（v3 在部分 runner 上下载失败）
         run: |
           yes | sdkmanager --licenses >/dev/null 2>&1 || true
           # 项目已升级 AGP 9.4 / compileSdk 37（默认 build-tools 36.0.0）
