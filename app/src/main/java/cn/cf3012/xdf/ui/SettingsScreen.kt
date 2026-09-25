@@ -58,13 +58,17 @@ private sealed class UpdateState {
 /** 选项页：日志设置 + 关于/更新/仓库（其余功能已迁入各 scope 详情页） */
 @Composable
 fun SettingsScreen(tick: Int, context: Context) {
-    val cfg = remember(tick) { AppConfig.refresh() }
+    // 本地刷新 tick：写配置后自增，避免受控开关被旧值弹回
+    var cfgTick by remember { mutableStateOf(tick) }
+    val cfg = remember(cfgTick) { AppConfig.refresh() }
     var dialog by remember { mutableStateOf<LogDialog?>(null) }
     var about by remember { mutableStateOf(false) }
     var updateState by remember { mutableStateOf<UpdateState?>(null) }
 
     fun setOr(key: String, value: Boolean) {
-        if (!AppConfig.setBoolean(key, value)) {
+        if (AppConfig.setBoolean(key, value)) {
+            cfgTick++
+        } else {
             Toast.makeText(context, R.string.env_no_write, Toast.LENGTH_LONG).show()
         }
     }

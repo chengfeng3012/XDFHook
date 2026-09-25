@@ -104,13 +104,18 @@ fun ScopeDetailScreen(
     tick: Int,
     context: Context,
 ) {
-    val cfg = remember(tick) { AppConfig.refresh() }
-    val inScope = remember(tick) { ScopeManager.isInScope(scope) }
+    // 本地刷新 tick：写配置/改 scope 后自增，避免受控开关被旧值弹回
+    var cfgTick by remember { mutableStateOf(tick) }
+    var scopeTick by remember { mutableStateOf(tick) }
+    val cfg = remember(cfgTick) { AppConfig.refresh() }
+    val inScope = remember(scopeTick) { ScopeManager.isInScope(scope) }
     val hooks = remember { hooksFor(scope) }
     var param by remember { mutableStateOf<Param?>(null) }
 
     fun setHook(hook: String, checked: Boolean) {
-        if (!AppConfig.setBoolean(AppConfig.hookKey(scope, hook), checked)) {
+        if (AppConfig.setBoolean(AppConfig.hookKey(scope, hook), checked)) {
+            cfgTick++
+        } else {
             Toast.makeText(context, R.string.env_no_write, Toast.LENGTH_LONG).show()
         }
     }
@@ -170,6 +175,9 @@ fun ScopeDetailScreen(
                         color = Color(0xFF3482FF),
                         modifier = Modifier.clickable {
                             ScopeManager.request(scope) { ok, reason ->
+                                if (ok) {
+                                    scopeTick++
+                                }
                                 Toast.makeText(
                                     context,
                                     if (ok) "已请求加入，重新打开应用后生效"
@@ -186,6 +194,7 @@ fun ScopeDetailScreen(
                         color = Color(0xFFFF6369),
                         modifier = Modifier.clickable {
                             ScopeManager.remove(scope)
+                            scopeTick++
                             Toast.makeText(context, "已移出作用域", Toast.LENGTH_SHORT).show()
                         },
                     )

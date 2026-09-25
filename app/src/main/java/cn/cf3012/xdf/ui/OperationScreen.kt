@@ -58,12 +58,13 @@ private const val CMD_DARK =
     "if [ \"$(settings get secure ui_night_mode)\" = \"2\" ]; then " +
         "settings put secure ui_night_mode 1; " +
         "else settings put secure ui_night_mode 2; fi"
+// 导航切换方向区分：切三键需 kill systemui 立即生效；切全面屏不 kill
 private const val CMD_NAV =
     "mode=\$(settings get secure navigation_mode); " +
         "if [ \"\$mode\" = \"2\" ]; then settings put secure navigation_mode 0; " +
-        "else settings put secure navigation_mode 2; fi; " +
-        "cmd overlay enable com.android.internal.systemui.navbar.gestural; " +
-        "killall -9 com.android.systemui"
+        "killall -9 com.android.systemui; " +
+        "else settings put secure navigation_mode 2; " +
+        "cmd overlay enable com.android.internal.systemui.navbar.gestural; fi"
 private const val CMD_REFRESH_MEDIA =
     "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/"
 private const val CMD_IME = "am start -a android.settings.INPUT_METHOD_SETTINGS"
@@ -144,7 +145,8 @@ fun OperationScreen(tick: Int, context: Context) {
         val labels = mutableMapOf<Int, Int>()
         FUNC_ACTIONS.filter { it.toggleType != T_NONE }.forEach { a ->
             val v = Root.get(a.getCmd.orEmpty()).trim()
-            labels[a.title] = if (v == a.onValue) a.labelOn else a.labelOff
+            // 圆钮中央显示【当前状态】：值命中 onValue（开/深/手势）→ 显示对应当前态文字
+            labels[a.title] = if (v == a.onValue) a.labelOff else a.labelOn
         }
         toggleLabels = labels
     }
@@ -193,48 +195,52 @@ fun OperationScreen(tick: Int, context: Context) {
             SmallTitle(text = stringResource(R.string.op_section_function))
         }
         item {
-            // 功能圆钮：7 个 + 静默安装，每行 4 个
+            // 功能按钮：8 个 = 4+4 两行网格（静默安装并入第 2 行第 4 位）
             Column(modifier = Modifier.padding(horizontal = 12.dp)) {
-                FUNC_ACTIONS.chunked(4).forEach { rowActs ->
+                buildList {
+                    addAll(FUNC_ACTIONS)
+                    add(null) // 静默安装
+                }.chunked(4).forEach { rowActs ->
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         rowActs.forEach { a ->
-                            FuncCircle(
-                                action = a,
-                                labelRes = if (a.toggleType != T_NONE)
-                                    toggleLabels[a.title] ?: 0 else 0,
-                                enabled = rootOk || a.cmd != null || a.orientationMenu,
-                                onClick = {
-                                    when {
-                                        a.orientationMenu -> showOrient = true
-                                        a.title == R.string.op_act_silent_install ->
-                                            showSilent = true
-                                        a.cmd != null -> runCommand(a.cmd) {
-                                            // toggle 刷新
+                            if (a == null) {
+                                SilentInstallCircle(
+                                    modifier = Modifier.weight(1f),
+                                    enabled = rootOk,
+                                    onClick = { showSilent = true },
+                                )
+                            } else {
+                                FuncCircle(
+                                    modifier = Modifier.weight(1f),
+                                    action = a,
+                                    labelRes = if (a.toggleType != T_NONE)
+                                        toggleLabels[a.title] ?: 0 else 0,
+                                    enabled = rootOk || a.cmd != null || a.orientationMenu,
+                                    onClick = {
+                                        when {
+                                            a.orientationMenu -> showOrient = true
+                                            a.cmd != null -> runCommand(a.cmd) {}
                                         }
-                                    }
-                                },
-                            )
+                                    },
+                                )
+                            }
                         }
                     }
                 }
-                // 静默安装钮追加到末尾行
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                ) {
-                    SilentInstallCircle(
-                        enabled = rootOk,
-                        onClick = { showSilent = true },
-                    )
-                }
             }
+        }
+        item {
+            Text(
+                text = "按钮中央文字为当前状态，点击后切换。",
+                fontSize = 12.sp,
+                color = Color(0xFF8A8A8E),
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 2.dp),
+            )
         }
         item {
             SmallTitle(text = stringResource(R.string.op_section_danger))
@@ -244,10 +250,11 @@ fun OperationScreen(tick: Int, context: Context) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 DANGER_ACTIONS.forEach { d ->
                     DangerCircle(
+                        modifier = Modifier.weight(1f),
                         action = d,
                         enabled = rootOk,
                         onClick = { dangerTarget = d },
@@ -363,15 +370,14 @@ fun OperationScreen(tick: Int, context: Context) {
 /** 功能圆钮：圆内短字（toggle 为下一步文字/静态为短字），下方标题 */
 @Composable
 private fun FuncCircle(
+    modifier: Modifier = Modifier,
     action: FuncAction,
     labelRes: Int,
     enabled: Boolean,
     onClick: () -> Unit,
 ) {
     Column(
-        modifier = Modifier
-            .width(76.dp)
-            .padding(vertical = 4.dp),
+        modifier = modifier.padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
@@ -388,7 +394,7 @@ private fun FuncCircle(
                     else -> stringResource(action.title)
                 },
                 color = Color.White,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
                 textAlign = TextAlign.Center,
             )
         }
@@ -397,16 +403,18 @@ private fun FuncCircle(
             fontSize = 11.sp,
             color = Color(0xFF3C3C43),
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 4.dp),
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 4.dp, start = 2.dp, end = 2.dp),
         )
     }
 }
 
 /** 静默安装（颜色风格一致的独立圆钮） */
 @Composable
-private fun SilentInstallCircle(enabled: Boolean, onClick: () -> Unit) {
+private fun SilentInstallCircle(modifier: Modifier = Modifier, enabled: Boolean, onClick: () -> Unit) {
     Column(
-        modifier = Modifier.width(76.dp).padding(vertical = 4.dp),
+        modifier = modifier.padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
@@ -419,7 +427,7 @@ private fun SilentInstallCircle(enabled: Boolean, onClick: () -> Unit) {
             Text(
                 text = stringResource(R.string.op_act_silent_install_short),
                 color = Color.White,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
             )
         }
         Text(
@@ -427,16 +435,18 @@ private fun SilentInstallCircle(enabled: Boolean, onClick: () -> Unit) {
             fontSize = 11.sp,
             color = Color(0xFF3C3C43),
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 4.dp),
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 4.dp, start = 2.dp, end = 2.dp),
         )
     }
 }
 
 /** 危险操作圆钮（淡红体验证态保持原色） */
 @Composable
-private fun DangerCircle(action: DangerAction, enabled: Boolean, onClick: () -> Unit) {
+private fun DangerCircle(modifier: Modifier = Modifier, action: DangerAction, enabled: Boolean, onClick: () -> Unit) {
     Column(
-        modifier = Modifier.width(76.dp).padding(vertical = 4.dp),
+        modifier = modifier.padding(vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
@@ -449,7 +459,7 @@ private fun DangerCircle(action: DangerAction, enabled: Boolean, onClick: () -> 
             Text(
                 text = stringResource(action.short),
                 color = Color.White,
-                fontSize = 12.sp,
+                fontSize = 13.sp,
             )
         }
         Text(
@@ -457,7 +467,9 @@ private fun DangerCircle(action: DangerAction, enabled: Boolean, onClick: () -> 
             fontSize = 11.sp,
             color = Color(0xFF3C3C43),
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 4.dp),
+            maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            modifier = Modifier.padding(top = 4.dp, start = 2.dp, end = 2.dp),
         )
     }
 }

@@ -69,8 +69,11 @@ private val SCOPE_ORDER = listOf(
 
 @Composable
 fun ScopeListScreen(tick: Int, context: Context, onOpen: (String) -> Unit) {
-    val cfg = remember(tick) { AppConfig.refresh() }
-    val scopeSet = remember(tick) { ScopeManager.scope().toSet() }
+    // 本地刷新 tick：写配置 / 改 scope 后自增，避免受控开关被旧值弹回
+    var cfgTick by remember { mutableStateOf(tick) }
+    var scopeTick by remember { mutableStateOf(tick) }
+    val cfg = remember(cfgTick) { AppConfig.refresh() }
+    val scopeSet = remember(scopeTick) { ScopeManager.scope().toSet() }
     val connected = ScopeManager.isConnected()
     var confirmRemove by remember { mutableStateOf<String?>(null) }
     var confirmAdd by remember { mutableStateOf<String?>(null) }
@@ -83,7 +86,9 @@ fun ScopeListScreen(tick: Int, context: Context, onOpen: (String) -> Unit) {
             SwitchPreference(
                 checked = cfg.master,
                 onCheckedChange = { checked ->
-                    if (!AppConfig.setBoolean(AppConfig.K_MASTER, checked)) {
+                    if (AppConfig.setBoolean(AppConfig.K_MASTER, checked)) {
+                        cfgTick++
+                    } else {
                         Toast.makeText(context, R.string.env_no_write, Toast.LENGTH_LONG).show()
                     }
                 },
@@ -135,6 +140,7 @@ fun ScopeListScreen(tick: Int, context: Context, onOpen: (String) -> Unit) {
                     confirmAdd = null
                     ScopeManager.request(s) { ok, reason ->
                         if (ok) {
+                            scopeTick++
                             Toast.makeText(
                                 context,
                                 "已请求加入，重新打开应用后生效",
@@ -166,6 +172,7 @@ fun ScopeListScreen(tick: Int, context: Context, onOpen: (String) -> Unit) {
             confirmButton = {
                 TextButton(onClick = {
                     ScopeManager.remove(scope)
+                    scopeTick++
                     confirmRemove = null
                     Toast.makeText(context, "已移出作用域", Toast.LENGTH_SHORT).show()
                 }) { Text("移除") }
