@@ -54,20 +54,11 @@ class MainActivity : ComponentActivity(), XposedServiceHolder.Listener {
         super.onResume()
         // service 状态变化（绑定/失联）→ 刷新
         XposedServiceHolder.setListener(this)
-        // hook 进程日志广播上行（IPC）：前台期间接收
-        try {
-            registerReceiver(LogStore.RECEIVER, LogStore.filter())
-        } catch (_: Throwable) {
-        }
         refreshTick++
     }
 
     override fun onPause() {
         XposedServiceHolder.setListener(null)
-        try {
-            unregisterReceiver(LogStore.RECEIVER)
-        } catch (_: Throwable) {
-        }
         super.onPause()
     }
 

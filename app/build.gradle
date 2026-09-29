@@ -11,8 +11,28 @@ def appStoreFile = System.getenv('APP_KEYSTORE_FILE')
 def appStorePass = System.getenv('APP_KEYSTORE_PASS')
 def appKeyAlias = System.getenv('APP_KEY_ALIAS')
 def appKeyPass = System.getenv('APP_KEY_PASS')
+
+// 本地固定签名：优先环境变量（CI 注入）；否则回退到仓库外备份的 release keystore。
+// 这样 debug 与 release 同签名，可互相覆盖安装；LSPosed 也认作同一模块（scope 不丢）。
+// 密码从 creds.txt 运行时读取，不写进 git。
+def localSignDir = file(providers.gradleProperty('xdfhook.localSignDir')
+        .getOrElse('/workspace/xdfhook-sign'))
+def localKeystore = new File(localSignDir, 'xdfhook-release.jks')
+def localCreds = new File(localSignDir, 'creds.txt')
+def localProps = [:]
+if (localKeystore.exists() && localCreds.exists()) {
+    localCreds.eachLine { line ->
+        def m = (line =~ /^\s*([A-Z_]+)\s*=\s*(.+?)\s*$/)
+        if (m.find()) {
+            localProps[m.group(1)] = m.group(2)
+        }
+    }
+}
+def ksFile = appStoreFile ?: (localKeystore.exists() ? localKeystore.absolutePath : null)
+def ksPass = appStorePass ?: localProps['STORE_PASS']
+def ksAlias = appKeyAlias ?: localProps['ALIAS']
 // PKCS12 keystore 同密码：signing 就绪仅需 storeFile/storePass/alias（keyPass 已废弃使用）
-def releaseSigningReady = appStoreFile && appStorePass && appKeyAlias
+def releaseSigningReady = ksFile && ksPass && ksAlias
 
 android {
     namespace 'cn.cf3012.xdf'
@@ -32,17 +52,23 @@ android {
     signingConfigs {
         release {
             if (releaseSigningReady) {
-                storeFile file(appStoreFile)
-                storePassword appStorePass
-                keyAlias appKeyAlias
+                storeFile file(ksFile)
+                storePassword ksPass
+                keyAlias ksAlias
                 // keystore 为 PKCS12：store/key 密码强制一致，keyPassword 必须用
                 // storePassword，否则签名时 "Given final block not properly padded"
-                keyPassword appStorePass
+                keyPassword ksPass
             }
         }
     }
 
     buildTypes {
+        debug {
+            // 与 release 同一把固定签名：debug/release 可互相覆盖安装
+            if (releaseSigningReady) {
+                signingConfig signingConfigs.release
+            }
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'

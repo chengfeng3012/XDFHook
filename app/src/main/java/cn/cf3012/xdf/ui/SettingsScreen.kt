@@ -35,7 +35,6 @@ import cn.cf3012.xdf.AppConfig
 import cn.cf3012.xdf.R
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.preference.ArrowPreference
-import top.yukonga.miuix.kmp.preference.SwitchPreference
 
 private val LEVEL_NAMES = listOf(
     R.string.level_v,
@@ -48,8 +47,6 @@ private val LEVEL_VALUES = listOf(2, 3, 4, 5, 6) // VERBOSE..ERROR
 
 private sealed class LogDialog {
     object Level : LogDialog()
-    object Path : LogDialog()
-    object Cap : LogDialog()
 }
 
 private sealed class UpdateState {
@@ -116,43 +113,27 @@ fun SettingsScreen(tick: Int, context: Context) {
         )
     }
 
-    fun setOr(key: String, value: Boolean) {
-        if (AppConfig.setBoolean(key, value)) {
+    /**
+     * 统一写入入口。写成功后必须 cfgTick++，否则 remember(cfgTick) 不会重算，
+     * 页面继续显示旧值（实测：日志级别改完要返回再进才刷新）。
+     */
+    fun save(block: () -> Boolean) {
+        if (block()) {
             cfgTick++
         } else {
             Toast.makeText(context, R.string.env_no_write, Toast.LENGTH_LONG).show()
         }
     }
 
+    fun setOr(key: String, value: Boolean) {
+        save { AppConfig.setBoolean(key, value) }
+    }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 8.dp),
     ) {
-        item { SmallTitle(text = stringResource(R.string.opt_log_file)) }
-        item {
-            SwitchPreference(
-                checked = cfg.logFileEnabled,
-                onCheckedChange = { setOr(AppConfig.K_LOG_FILE_ENABLED, it) },
-                title = stringResource(R.string.opt_log_file),
-                summary = stringResource(R.string.opt_log_file_desc),
-            )
-        }
-        item {
-            ArrowPreference(
-                title = stringResource(R.string.opt_log_path),
-                summary = stringResource(R.string.opt_log_path_desc),
-                onClick = { dialog = LogDialog.Path },
-            )
-        }
-        item {
-            ArrowPreference(
-                title = stringResource(R.string.opt_log_cap),
-                summary = "当前：" + stringResource(
-                    R.string.log_cap_value_fmt, cfg.logFileCapKb,
-                ),
-                onClick = { dialog = LogDialog.Cap },
-            )
-        }
+        item { SmallTitle(text = stringResource(R.string.opt_log_level)) }
         item {
             val levelNameRes = LEVEL_NAMES.getOrNull(
                 LEVEL_VALUES.indexOf(cfg.logLevel),
@@ -228,54 +209,7 @@ fun SettingsScreen(tick: Int, context: Context) {
             current = cfg.logLevel,
             onPick = { v ->
                 dialog = null
-                if (!AppConfig.setInt(AppConfig.K_LOG_LEVEL, v)) {
-                    Toast.makeText(context, R.string.env_no_write, Toast.LENGTH_LONG).show()
-                }
-            },
-            onCancel = { dialog = null },
-        )
-        LogDialog.Path -> TextInputDialog(
-            title = R.string.opt_log_path,
-            hint = R.string.input_log_path_hint,
-            initial = cfg.logFilePath ?: "",
-            context = context,
-            onOk = { v ->
-                dialog = null
-                if (v.trim().isEmpty()) {
-                    AppConfig.setString(AppConfig.K_LOG_FILE_PATH, "")
-                    Toast.makeText(context, R.string.toast_log_path_ok, Toast.LENGTH_SHORT).show()
-                } else {
-                    if (!AppConfig.setString(AppConfig.K_LOG_FILE_PATH, v.trim())) {
-                        Toast.makeText(context, R.string.env_no_write, Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(context, R.string.toast_log_path_ok, Toast.LENGTH_SHORT).show()
-                    }
-                }
-            },
-            onCancel = { dialog = null },
-        )
-        LogDialog.Cap -> TextInputDialog(
-            title = R.string.opt_log_cap,
-            hint = R.string.input_log_cap_hint,
-            initial = cfg.logFileCapKb?.toString() ?: "",
-            context = context,
-            inputType = true,
-            onOk = { v ->
-                dialog = null
-                val kb = v.trim().toIntOrNull()
-                if (kb == null || kb <= 0 || kb > AppConfig.MAX_LOG_CAP_KB) {
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.toast_log_cap_invalid, AppConfig.MAX_LOG_CAP_KB),
-                        Toast.LENGTH_LONG,
-                    ).show()
-                } else {
-                    if (!AppConfig.setInt(AppConfig.K_LOG_FILE_CAP_KB, kb)) {
-                        Toast.makeText(context, R.string.env_no_write, Toast.LENGTH_LONG).show()
-                    } else {
-                        Toast.makeText(context, R.string.toast_log_cap_ok, Toast.LENGTH_SHORT).show()
-                    }
-                }
+                save { AppConfig.setInt(AppConfig.K_LOG_LEVEL, v) }
             },
             onCancel = { dialog = null },
         )

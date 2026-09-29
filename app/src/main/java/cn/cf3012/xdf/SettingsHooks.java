@@ -135,8 +135,9 @@ final class SettingsHooks {
     }
 
     /** 直接在右侧内容容器 replace 目标 fragment（绕开 XDF 对非 Dashboard 开新窗口的 fallback）
-     *  容器 id 0x7f0a029f = XDF 主窗体右侧 fragment 容器（dev 崩溃栈实证） */
-    private static void replaceRightFragment(Object act, String fragName,
+     *  容器 id 0x7f0a029f = XDF 主窗体右侧 fragment 容器（dev 崩溃栈实证）
+     *  包级可见：LockScreenHooks 的「屏幕锁定」入口同样复用此路由（保持两处 UI 行为一致） */
+    static void replaceRightFragment(Object act, String fragName,
             Object bundle, ClassLoader cl) throws Exception {
         Class<?> fragCls = Reflect.findClass("androidx.fragment.app.Fragment", cl);
         Object f = Reflect.callStatic(fragCls, "instantiate",

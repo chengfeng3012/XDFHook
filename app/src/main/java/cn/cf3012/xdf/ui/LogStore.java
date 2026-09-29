@@ -1,76 +1,60 @@
 package cn.cf3012.xdf.ui;
 
-import android.content.BroadcastReceiver;
-import android.content.Context;
-import android.content.Intent;
-import android.content.IntentFilter;
-
-import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 
-import cn.cf3012.xdf.FileLogger;
 import cn.cf3012.xdf.LogParser;
+import cn.cf3012.xdf.Root;
 
 /**
- * LogStore — 管理端日志缓冲（IPC 广播接收侧）。
+ * LogStore — 日志页数据源（重构后直接读 logcat）。
  *
- * hook 进程的 FileLogger 将日志行聚合后以广播上行
- * （setPackage 限定本模块），此处动态 receiver 接收并维护
- * 进程内环形缓冲；LogsPage 只读本缓冲，实时刷新，零文件依赖。
+ * 为什么不再用广播：旧实现靠 hook 进程 sendBroadcast 上行，那是 2026-08-28
+ * system_server 濒死事故的根因（uid1000 发非 protected 自定义广播 → AMS
+ * checkBroadcastFromSystem → Log.wtf → dropbox 高频写盘）。现已从 FileLogger
+ * 彻底删除，模块侧不再做任何 IPC，也不再写任何文件。
  *
- * 生命周期：MainActivity onResume 注册 / onPause 注销。
+ * 现在的取数：root 读 logcat。所有 hook 进程的日志都由 FileLogger 用固定
+ * tag=XDFHook 打进 logcat，一条命令即可捞全，无需枚举子标签。
+ * 级别过滤与 tag 过滤都在日志页客户端做。
+ *
+ * load() 是阻塞调用（会 fork 一个 su 进程），必须在后台线程执行。
  */
 public final class LogStore {
 
-    /** 缓冲上限（行） */
-    private static final int MAX_LINES = 2000;
+    /** 取数命令：最近 2000 行本模块日志 */
+    private static final String CMD = "logcat -d -v threadtime -t 2000 -s XDFHook";
 
-    private static final ArrayDeque<LogParser.Line> LINES = new ArrayDeque<>();
-    private static final Object LOCK = new Object();
+    private static volatile List<LogParser.Line> sLines = new ArrayList<>();
+    private static volatile boolean sUnavailable;
 
     private LogStore() {
     }
 
-    /** 动态 receiver（MainActivity onResume 注册） */
-    public static final BroadcastReceiver RECEIVER = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if (intent == null || !FileLogger.ACTION_LOG.equals(intent.getAction())) {
-                return;
-            }
-            String proc = intent.getStringExtra(FileLogger.EXTRA_PROC);
-            String data = intent.getStringExtra(FileLogger.EXTRA_DATA);
-            if (data == null || data.isEmpty()) {
-                return;
-            }
-            List<LogParser.Line> parsed = LogParser.parse(data, proc);
-            synchronized (LOCK) {
-                for (LogParser.Line line : parsed) {
-                    if (LINES.size() >= MAX_LINES) {
-                        LINES.pollFirst();
-                    }
-                    LINES.addLast(line);
-                }
-            }
+    /** 阻塞取数（后台线程）；失败时返回上一次的结果 */
+    public static List<LogParser.Line> load() {
+        String out = null;
+        try {
+            out = Root.get(CMD);
+        } catch (Throwable ignored) {
         }
-    };
-
-    public static IntentFilter filter() {
-        return new IntentFilter(FileLogger.ACTION_LOG);
+        if (out == null || out.isEmpty()) {
+            sUnavailable = true;
+            return sLines;
+        }
+        sUnavailable = false;
+        List<LogParser.Line> parsed = LogParser.parseLogcat(out);
+        sLines = parsed;
+        return parsed;
     }
 
-    /** 缓冲快照（旧→新） */
+    /** 最近一次取数结果（不触发 IO） */
     public static List<LogParser.Line> snapshot() {
-        synchronized (LOCK) {
-            return new ArrayList<>(LINES);
-        }
+        return sLines;
     }
 
-    public static int size() {
-        synchronized (LOCK) {
-            return LINES.size();
-        }
+    /** root 不可用 / 取数失败（日志页据此提示） */
+    public static boolean unavailable() {
+        return sUnavailable;
     }
 }

@@ -30,7 +30,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.cf3012.xdf.LogParser
 import cn.cf3012.xdf.R
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import top.yukonga.miuix.kmp.basic.SmallTitle
 
 private val LEVELS = listOf('V', 'D', 'I', 'W', 'E')
@@ -43,18 +44,28 @@ private val LEVEL_COLOR = mapOf(
     'E' to Color(0xFFFF6482),
 )
 
-/** 日志页：tag/级别 chip 过滤 + 2s 轮询刷新 */
+/**
+ * 日志页：tag/级别 chip 过滤 + 手动刷新。
+ *
+ * ⚠️ 【不要加轮询】取数靠 root 执行 `logcat`，每读一次都会 fork 一个 su 进程。
+ * 之前的版本用 while+delay(2000) 轮询，导致 Magisk 反复弹 root 授权，
+ * 体验极差（用户实测反馈）。现在改为：进入页面读一次 + 点「刷新」再读。
+ */
 @Composable
 fun LogsScreen(tick: Int, context: Context) {
     var selLevel by remember { mutableStateOf('I') } // I 及以上
     var selTag by remember { mutableStateOf<String?>(null) }
     var lines by remember { mutableStateOf<List<LogParser.Line>>(emptyList()) }
+    var unavailable by remember { mutableStateOf(false) }
+    var refreshing by remember { mutableStateOf(false) }
+    var manualTick by remember { mutableStateOf(0) }
 
-    LaunchedEffect(tick) {
-        while (true) {
-            lines = LogStore.snapshot()
-            delay(2000)
-        }
+    // 仅在进入页面（tick 变化）或点刷新时读一次
+    LaunchedEffect(tick, manualTick) {
+        refreshing = true
+        lines = withContext(Dispatchers.IO) { LogStore.load() }
+        unavailable = LogStore.unavailable()
+        refreshing = false
     }
 
     val tags = remember(lines) {
@@ -71,6 +82,30 @@ fun LogsScreen(tick: Int, context: Context) {
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 8.dp),
     ) {
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    text = when {
+                        refreshing -> "读取中…"
+                        unavailable -> "读取失败（需要 Root）"
+                        else -> "共 ${lines.size} 条，显示 ${filtered.size} 条"
+                    },
+                    fontSize = 12.sp,
+                    color = Color(0xFF8A8A8E),
+                )
+                FilterChip(
+                    text = "刷新",
+                    selected = false,
+                    onClick = { manualTick++ },
+                )
+            }
+        }
         item {
             SmallTitle(text = "标签")
             LazyRow(
@@ -112,7 +147,8 @@ fun LogsScreen(tick: Int, context: Context) {
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        text = stringResource(R.string.log_empty),
+                        text = stringResource(
+                            if (unavailable) R.string.log_need_root else R.string.log_empty),
                         fontSize = 13.sp,
                         color = Color(0xFF8A8A8E),
                     )

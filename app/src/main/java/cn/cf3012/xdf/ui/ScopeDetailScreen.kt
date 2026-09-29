@@ -71,6 +71,8 @@ private fun hooksFor(scope: String): List<HookDef> = when (scope) {
     AppConfig.SCOPE_SETTINGS -> listOf(
         HookDef(AppConfig.H_SETTINGS_UNLOCK, "完整设置", "恢复被隐藏的设置项与开发者选项",
             { it.hSettingsUnlock }),
+        HookDef(AppConfig.H_LOCK_UNLOCK, "锁屏方式恢复", "恢复滑动 / PIN / 图案 / 密码的选择入口",
+            { it.hSettingsLockUnlock }),
     )
     AppConfig.SCOPE_LAUNCHER -> listOf(
         HookDef(AppConfig.H_RECENT_TASKS, "桌面增强", "恢复最近任务列表不被隐藏",
@@ -116,12 +118,24 @@ fun ScopeDetailScreen(
     // 返回键：先退出详情页，而不是直接退出 App
     BackHandler(enabled = true) { onBack() }
 
-    fun setHook(hook: String, checked: Boolean) {
-        if (AppConfig.setBoolean(AppConfig.hookKey(scope, hook), checked)) {
+    /**
+     * 统一写入入口。
+     *
+     * 写成功后必须 cfgTick++：页面用 remember(cfgTick){ AppConfig.refresh() }
+     * 取值，不 bump 就会一直显示旧值（实测：SN 伪装/日志级别改完必须返回再进
+     * 才生效）。所有写配置的分支一律走这里，避免再漏。
+     */
+    fun save(block: () -> Boolean): Boolean {
+        if (block()) {
             cfgTick++
-        } else {
-            Toast.makeText(context, R.string.env_no_write, Toast.LENGTH_LONG).show()
+            return true
         }
+        Toast.makeText(context, R.string.env_no_write, Toast.LENGTH_LONG).show()
+        return false
+    }
+
+    fun setHook(hook: String, checked: Boolean) {
+        save { AppConfig.setBoolean(AppConfig.hookKey(scope, hook), checked) }
     }
 
     LazyColumn(
@@ -271,9 +285,7 @@ fun ScopeDetailScreen(
             current = cfg.inputMethodMode,
             onPick = { v ->
                 param = null
-                if (!AppConfig.setInt(AppConfig.K_INPUT_METHOD_MODE, v)) {
-                    Toast.makeText(context, R.string.env_no_write, Toast.LENGTH_LONG).show()
-                }
+                save { AppConfig.setInt(AppConfig.K_INPUT_METHOD_MODE, v) }
             },
             onCancel = { param = null },
         )
@@ -282,9 +294,7 @@ fun ScopeDetailScreen(
             context = context,
             onPick = { list ->
                 param = null
-                if (!AppConfig.setString(AppConfig.K_INPUT_METHOD_LIST, list)) {
-                    Toast.makeText(context, R.string.env_no_write, Toast.LENGTH_LONG).show()
-                }
+                save { AppConfig.setString(AppConfig.K_INPUT_METHOD_LIST, list) }
             },
             onCancel = { param = null },
         )
@@ -292,9 +302,7 @@ fun ScopeDetailScreen(
             context = context,
             onPick = { v ->
                 param = null
-                if (!AppConfig.setString(AppConfig.K_ZEUS_MODEL, v)) {
-                    Toast.makeText(context, R.string.env_no_write, Toast.LENGTH_LONG).show()
-                }
+                save { AppConfig.setString(AppConfig.K_ZEUS_MODEL, v) }
             },
             onCancel = { param = null },
         )
@@ -305,9 +313,7 @@ fun ScopeDetailScreen(
             context = context,
             onOk = { v ->
                 param = null
-                if (!AppConfig.setString(AppConfig.K_ZEUS_SN, v.trim())) {
-                    Toast.makeText(context, R.string.env_no_write, Toast.LENGTH_LONG).show()
-                } else {
+                if (save { AppConfig.setString(AppConfig.K_ZEUS_SN, v.trim()) }) {
                     Toast.makeText(context, "序列号已保存", Toast.LENGTH_SHORT).show()
                 }
             },

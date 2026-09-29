@@ -25,7 +25,9 @@ import java.util.Set;
  *                                            + C 组 ChooserActivity UI 修复）
  *                            + HomeUnlocker（PMS preferred 写入只读诊断）
  *   cn.xdf.zeus            → ZeusUnlocker（B 组检查链/云控/序列号短路）
- *   com.android.settings   → SettingsHooks（属性放行/开发者选项/更多设置入口）
+ *   com.android.settings   → LockScreenHooks（锁屏方式恢复：原生 security_settings_picker
+ *                                         + 拦截 XDF 逐项摘除 + 左栏锁屏页注入「屏幕锁定」）
+ *                            + SettingsHooks（属性放行/开发者选项/更多设置入口）
  *                            + UiRestorer（显示页/声音页/系统页条目还原）
  *   com.android.gallery3d  → GalleryHooks（相册"编辑"按钮恢复）
  *   com.android.launcher3  → LauncherHooks（最近任务隐藏列表解除）
@@ -73,6 +75,11 @@ public class XDFHook extends XposedModule {
 
     /* ==================== 生命周期 ==================== */
 
+    /** FileLogger 等静态工具取 framework 接口用（api.log 等） */
+    static XposedInterface api() {
+        return sApi;
+    }
+
     /**
      * 每个进程最早的生命周期点：模块入口是否被调用的最硬证据。
      */
@@ -80,13 +87,26 @@ public class XDFHook extends XposedModule {
     public void onModuleLoaded(ModuleLoadedParam param) {
         sApi = this;
         DebugProbe.setProcessName(param.getProcessName());
-        // 日志通道先行：进程名 + system_server 判定（system_server 禁广播通道）
+        // 日志通道先行：记录进程名（logcat + framework api.log 两条通道共用）
         FileLogger.hookInit(param.getProcessName(), param.isSystemServer());
         if (param.isSystemServer()) {
             DebugProbe.setAppDir(new java.io.File("/data/system"));
         }
         DebugProbe.log("onModuleLoaded: entry invoked, process=" + param.getProcessName()
                 + ", isSystemServer=" + param.isSystemServer());
+        // 框架能力位诊断：PROP_CAP_SYSTEM 决定本模块能否 hook system_server。
+        // （本机 2.1.1/2.2.0 上模块能进普通 app 作用域却进不了 system_server，
+        //    这个值能一次性区分「框架没给能力」与「给了但没派发」。）
+        try {
+            long props = getFrameworkProperties();
+            logi(TAG, "framework=" + getFrameworkName() + "/" + getFrameworkVersion()
+                    + " api=" + getApiVersion()
+                    + " props=" + props
+                    + " capSystem=" + ((props & PROP_CAP_SYSTEM) != 0)
+                    + " capRemote=" + ((props & PROP_CAP_REMOTE) != 0));
+        } catch (Throwable t) {
+            loge(t, TAG, "framework capability probe");
+        }
         if (isOwnUiProcess(param)) {
             // 模块作用域勾选了自己：UI 进程被 LSPosed 注入（可选路径）。
             // 与 XposedService binder 推送（正常路径）写同一份 daemon 托管存储。
@@ -228,6 +248,18 @@ public class XDFHook extends XposedModule {
                 }
                 break;
             case PKG_SETTINGS:
+                // 锁屏方式恢复：独立 hook 单元，故置于「完整设置」门控之前
+                // （关掉「完整设置」不应连带关掉锁屏方式，反之亦然）
+                if (cfg.hookEnabled(AppConfig.SCOPE_SETTINGS, AppConfig.H_LOCK_UNLOCK)) {
+                    runGuarded("LockScreenHooks", new HookInstall() {
+                        @Override
+                        public void run() throws Exception {
+                            LockScreenHooks.hookAll(cl);
+                        }
+                    });
+                } else {
+                    logi(TAG, "lock screen unlock disabled, skip");
+                }
                 if (!cfg.hSettingsUnlock) {
                     logi(TAG, "settings unlock disabled, skip");
                     break;
@@ -395,6 +427,7 @@ public class XDFHook extends XposedModule {
         Class<?> clazz = Class.forName(clsName, false, cl);
         Method m = Reflect.findDeclared(clazz, method, params);
         m.setAccessible(true);
+        deopt(m);
         hook(m, hooker);
     }
 
@@ -404,7 +437,28 @@ public class XDFHook extends XposedModule {
             throws Exception {
         Method m = Reflect.findDeclared(clazz, method, params);
         m.setAccessible(true);
+        deopt(m);
         hook(m, hooker);
+    }
+
+    /**
+     * 阻止 ART 把目标方法内联进调用方（deoptimize）。
+     *
+     * system_server / framework 跑在 boot image（AOT）里，短小的 framework 方法
+     * 会被编译期内联进调用方 —— 这时 hook 方法入口是拦不住的（调用点已是 inline
+     * 副本）。API 102 的 XposedInterface.deoptimize() 就是为此而生，wiki 原文：
+     * "deoptimize a specific method to bypass method inline (especially when
+     * hooking System Framework)"。每次 hook 前调一次，代价可忽略。
+     */
+    public static void deopt(java.lang.reflect.Executable target) {
+        XposedInterface api = sApi;
+        if (api == null) {
+            return;
+        }
+        try {
+            api.deoptimize(target);
+        } catch (Throwable ignored) {
+        }
     }
 
     /** 容错 hook：类/方法不存在仅记录日志，绝不抛出影响宿主 */

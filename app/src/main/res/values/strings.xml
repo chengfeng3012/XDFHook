@@ -73,7 +73,7 @@
     <string name="env_service_ok">服务已连接（Android %s）</string>
     <string name="env_service_off">未连接：请在 LSPosed 中启用本模块</string>
     <string name="env_no_read">无法读取日志</string>
-    <string name="env_no_write">无法保存设置</string>
+    <string name="env_no_write">无法保存设置\n\n多为 LSPosed 服务未连接（更新模块后常见）。请完全退出应用再重新打开。</string>
 
     <string name="section_module">模块</string>
     <string name="section_global">全局</string>
@@ -110,22 +110,6 @@
     <string name="opt_aggressive_desc">拦截桌面被改回 XDF 默认</string>
     <string name="opt_log_level">日志级别</string>
     <string name="opt_log_level_desc">日志显示的最低级别</string>
-
-    <string name="opt_log_file">日志落盘</string>
-    <string name="opt_log_file_desc">开启后写入日志文件</string>
-    <string name="opt_log_path">落盘路径</string>
-    <string name="opt_log_path_desc">日志文件保存位置</string>
-    <string name="opt_log_cap">日志上限(KB)</string>
-    <string name="opt_log_cap_desc">日志文件大小上限</string>
-    <string name="log_path_value_fmt">%s</string>
-    <string name="log_cap_value_fmt">%d KB</string>
-    <string name="input_log_path_hint">如 /sdcard/Android/XDFHook.log</string>
-    <string name="input_log_path_default"></string>
-    <string name="toast_log_path_ok">路径已保存</string>
-    <string name="toast_log_path_fail">路径不可写，请检查权限</string>
-    <string name="input_log_cap_hint">1 ~ %d KB</string>
-    <string name="toast_log_cap_invalid">请输入 1 ~ %d 的数值</string>
-    <string name="toast_log_cap_ok">日志上限已保存</string>
 
     <string name="opt_input_method">输入法拦截器</string>
     <string name="opt_input_method_desc">防止输入法被意外更改</string>
@@ -166,6 +150,7 @@
     <string name="action_repo">跳转仓库</string>
 
     <string name="log_empty">暂无日志\n\n运行相关应用后，产生的日志会显示在这里。</string>
+    <string name="log_need_root">读取日志需要 Root 权限\n\n请先在「操作」页开启 Root 总开关，然后点右上角「刷新」。</string>
     <string name="chip_all">全部</string>
     <string name="about_body">XDFHook v%s (%d)\n\n一个用于解锁 XDF-N1 学习机系统功能的模块。\n\nBy chengfeng3012 · LibXposed API 102</string>
     <string name="update_checking">正在检查新版本…</string>

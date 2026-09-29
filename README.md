@@ -12,6 +12,7 @@
 | --- | --- | --- |
 | **ZeusUnlocker** | `system_server` / `cn.xdf.zeus` | 家长管控三层解除（A 组 framework/services 放行 + B 组 zeus 进程短路 + C 组 Chooser Activity UI 修复） |
 | **SettingsHooks** | `com.android.settings` | 属性放行 / 开发者选项 / 系统导航 / 主页「更多设置」选项卡 |
+| **LockScreenHooks** | `com.android.settings` | 恢复被阉割的「锁屏方式」页（滑动 / PIN / 图案 / 密码），并在左栏「锁屏」页注入「屏幕锁定」入口 |
 | **UiRestorer** | `com.android.settings` | 显示页 / 声音页 / 系统页被裁条目的注入与还原 |
 | **HomeUnlocker** | `system_server` / `com.android.launcher3` | 解除默认桌面（HOME）强制锁定：拦 ROM 的强制写入行为，不拦用户手动设置 |
 | **LauncherHooks** | `com.android.launcher3` | 最近任务隐藏列表解除 |
@@ -39,6 +40,9 @@
 
 ### HomeUnlocker（HOME 解锁）
 设计原则：**拦 ROM 的强制写入行为，不拦 preferred 状态本身**。framework 源头 `setDefaultLauncher` 跳过；launcher3 `setXdfDefaultHomeLauncher` block；system_server PMS preferred 写入走【只读探针】，命中 XDF 目标时记录调用方 uid/pid + IntentFilter 明细，仅在「激进拦截」开启时按调用方（cn.xdf.* / system_server）精确阻断，放行用户经设置/PermissionController 的主动设置。
+
+### LockScreenHooks（锁屏方式恢复）
+XDF 把左栏「锁屏」项劫持到自造的 `lockscreen.XdfLockScreenFragment`（纯自定义 View，整页只有「自动锁屏 / 锁屏来通知时亮屏」两行），且 `ChooseLockGenericFragment` 被动了手脚：`addPreferences()` 改 inflate 裁剪版 xml、`updatePreferencesOrFinish()` 追加 4 次 `removePreference` 把 PATTERN / PIN / PASSWORD / SWIPE 逐项摘掉。实现层（password 包 103 类、`ChooseLockSettingsHelper`、framework `LockSettingsShellCommand`）XDF 一行未改，属纯 UI 阉割。三处 hook 复原：换回原生 `security_settings_picker`、拦截那 4 次非法移除、兜底 `isScreenLockVisible=true`；再把左栏锁屏页里**克隆 ROM 自己那行**（标题 + 状态 + 右箭头，样式逐像素一致）改造成「屏幕锁定」入口，点击后 replace 到主窗体右栏容器（与「更多设置」同一路由，不新开窗口），失败则回落新开 `ChooseLockGeneric` 窗口。只做 UI 恢复，不碰任何凭据状态。
 
 ### InputMethodHooks（输入法拦截器）
 - 在 `system_server` 与所有 scope 进程 hook `Settings.Secure.putString` / `Settings.Global.putString`，只针对 `default_input_method` / `enabled_input_methods` / `selected_input_method` / `input_method_subtype_history` 四个键。

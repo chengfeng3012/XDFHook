@@ -41,15 +41,19 @@ import java.lang.reflect.Method;
  *  A6 AppMetaDataChecker.checkAppMetaDataExempted -> true
  *     canWebLoadUrl 的 meta-data 豁免检查（salt=beyond_twgdh_xjdmg），置 true 豁免所有应用。
  *
- * 【A+. ChooserActivity UI 修复（基于用户实测"图标点击无反应/无动画"）】
- *  已核实 startSelected 唯一入口（ItemClickListener）从未注册（ChooserActivity 重写
- *  onPrepareAdapterView 不调 super）、item focusable=true + setItemsCanFocus(true) 使
- *  AbsListView 触摸/键盘点击被 hasFocusable 门禁短路、ChooserRowAdapter.areAllItemsEnabled
- *  硬编码 false —— 三者叠加导致手点无涟漪、空格无反应。修复：
- *  C1 areAllItemsEnabled -> true；
- *  C2 onPrepareAdapterView after 补注册 OnItemClickListener（键盘兜底）；
- *  C3 ChooserListAdapter.onBindView after 给图标 cell 绑定 View.OnClickListener
- *     → 反查 position → startSelected(pos,false,false)（主修复，触摸+空格都生效）。
+ * 【A+. ChooserActivity UI 修复 —— 已迁出本类】
+ *  原 C1/C2/C3 三招建立在错误的静态分析上，经逐方法 smali 指令比对后全部删除，
+ *  改由 {@link ChooserClickRestore} 用单 hook 精确修复：
+ *  - C1 areAllItemsEnabled -> true：ROM 【并未改动】该方法（两边均 2 指令 =
+ *    原生 return true），此 hook 是空转；
+ *  - C2 onPrepareAdapterView 补 OnItemClickListener：ROM 与 AOSP 一致且【故意】
+ *    不注册（Chooser 用 cell 自带监听器），补注册属非原版机制，且把行位置
+ *    直接当目标索引会错位；
+ *  - C3 onBindView 绑点击：改用 getItem(i)==info 线性扫反查，且 filtered 传
+ *    false 与原版 true 不符。
+ *  真实根因：ROM 删除了 loadViewsIntoRow 中给 cell 绑定
+ *  OnClickListener(ChooserRowAdapter$2) / OnLongClickListener($3) 的整段代码，
+ *  图标格从未绑定任何回调。新实现 100% 复刻 $2/$3 语义。
  *
  * 【B. cn.xdf.zeus 进程 — onPackageReady 传入该应用 classloader】（类名来自逆向报告，全部容错）
  *  B1 ZeusManagerService$ZeusManagerStub.activityStarting(Intent,String) -> true
@@ -151,131 +155,49 @@ final class ZeusUnlocker {
                 new Class<?>[]{Context.class, String.class, String.class},
                 chain -> Boolean.TRUE,
                 "AppMetaDataChecker.checkAppMetaDataExempted -> true");
-
-        hookChooserUi(cl);
     }
 
-    /* ==================================================================
-     * C. ChooserActivity UI 修复（分享面板 App 图标点击无反应/无按压动画）
+    /**
+     * B5 掐断 zeus 的 living 心跳广播 —— system_server_wtf 的唯一源头。
      *
-     * current apk 静态事实：
-     * 1. startSelected(IZZ) 的唯一外部入口是 ResolverActivity$ItemClickListener.onItemClick，
-     *    而 ItemClickListener 只在【基类】ResolverActivity.onPrepareAdapterView 中注册；
-     *    ChooserActivity 重写了 onPrepareAdapterView 且不调 super、也没有任何
-     *    setOnItemClickListener —— 唯一点击入口被绕过。
-     * 2. item 布局 resolve_grid_item.xml 根 view android:focusable="true"，
-     *    且 ChooserActivity.onPrepareAdapterView 里 ListView.setItemsCanFocus(true)，
-     *    AbsListView 的触摸路径（CheckForTap 的 setPressed、PerformClick 的
-     *    performItemClick）与键盘路径（onKeyDown DPAD_CENTER）全部被
-     *    !child.hasFocusable() 检查短路。
-     * 3. ChooserRowAdapter.areAllItemsEnabled() 被硬编码返回 false。
+     * 【MT2 实证，XDF_XdfZeus.apk v1.0.46】
+     *  cn.xdf.zeus.core.manager.app.living.AppLivingManager：
+     *    startAllAppLiving(ctx) 遍历 PackageUtils.getInstalledAllApp(ctx,true)
+     *      → startAppLiving(ctx,pkg)
+     *          v0 = XdfManagerProxy.checkAppMetaDataExemptedAppLiving(pkg)
+     *          if-eqz v0, :return        // false 才跳过；true 才继续
+     *          → startLivingApp(ctx,pkg)
+     *    startLivingApp(ctx,pkg)：
+     *      sendBroadcast(new Intent("cn.xdf.zeus.sdk.living")
+     *                        .setPackage(pkg).addFlags(0x20))      // ← 无 protection
      *
-     * 上述三条叠加 = 手点无涟漪动画 + 空格/ENTER 无反应（用户实测）。
-     * 修复：给每个图标 cell 绑定 View.OnClickListener（View 层自点击，不经过
-     * AbsListView 的 hasFocusable/enabled 门禁，且 clickable 后涟漪动画自动恢复），
-     * 再给 ListView 补注册 OnItemClickListener 作为键盘路径兜底。
-     * ================================================================== */
-
-    private static void hookChooserUi(ClassLoader cl) {
-        final String listAdapterCls = "com.android.internal.app.ChooserActivity$ChooserListAdapter";
-        final String rowAdapterCls = "com.android.internal.app.ChooserActivity$ChooserRowAdapter";
-        final String targetInfoCls = "com.android.internal.app.ResolverActivity$TargetInfo";
-        final String resolveListAdapterCls = "com.android.internal.app.ResolverActivity$ResolveListAdapter";
-
-        // C1: 恢复 areAllItemsEnabled（mAreAllItemsSelectable 标志，影响按键导航判定）
-        XDFHook.safeHook(cl, rowAdapterCls, "areAllItemsEnabled",
-                new Class<?>[0],
-                chain -> Boolean.TRUE,
-                "ChooserRowAdapter.areAllItemsEnabled -> true");
-
-        // C2: onPrepareAdapterView 之后补注册 OnItemClickListener（键盘路径兜底）
-        try {
-            Class<?> chooser = Class.forName("com.android.internal.app.ChooserActivity", false, cl);
-            Class<?> param2 = Class.forName(resolveListAdapterCls, false, cl);
-            Method m = Reflect.findDeclared(chooser, "onPrepareAdapterView",
-                    new Class<?>[]{android.widget.AbsListView.class, param2});
-            m.setAccessible(true);
-            XDFHook.hook(m, chain -> {
-                Object r = chain.proceed();
-                try {
-                    final Object activity = chain.getThisObject();
-                    Object lv = chain.getArg(0);
-                    if (activity != null && lv instanceof android.widget.AbsListView) {
-                        ((android.widget.AbsListView) lv).setOnItemClickListener(
-                                new android.widget.AdapterView.OnItemClickListener() {
-                                    @Override
-                                    public void onItemClick(android.widget.AdapterView<?> parent,
-                                                            android.view.View view,
-                                                            int position, long id) {
-                                        try {
-                                            Reflect.call(activity, "startSelected",
-                                                    new Class<?>[]{int.class, boolean.class, boolean.class},
-                                                    position, false, false);
-                                        } catch (Throwable ignored) {
-                                        }
-                                    }
-                                });
-                        XDFHook.logi(TAG, "chooser: OnItemClickListener registered (fallback)");
-                    }
-                } catch (Throwable t) {
-                    XDFHook.logw(TAG, "chooser listener fallback failed: " + t);
-                }
-                return r;
-            });
-            XDFHook.logi(TAG, "hooked: ChooserActivity.onPrepareAdapterView (C2)");
-        } catch (Throwable t) {
-            XDFHook.logw(TAG, "onPrepareAdapterView skipped: " + t);
-        }
-
-        // C3: 每个图标 cell 绑定 OnClickListener（主修复：触摸 + 空格都走这里）
-        try {
-            Class<?> listAdapter = Class.forName(listAdapterCls, false, cl);
-            Class<?> targetInfo = Class.forName(targetInfoCls, false, cl);
-            Method m = Reflect.findDeclared(listAdapter, "onBindView",
-                    new Class<?>[]{android.view.View.class, targetInfo});
-            m.setAccessible(true);
-            XDFHook.hook(m, chain -> {
-                Object r = chain.proceed();
-                try {
-                    final Object adapter = chain.getThisObject();
-                    final Object info = chain.getArg(1);
-                    final Object viewObj = chain.getArg(0);
-                    if (adapter != null && info != null && viewObj instanceof android.view.View) {
-                        ((android.view.View) viewObj).setOnClickListener(v -> {
-                            try {
-                                int pos = findAdapterPosition(adapter, info);
-                                if (pos >= 0) {
-                                    Object activity = Reflect.getField(adapter, "this$0");
-                                    Reflect.call(activity, "startSelected",
-                                            new Class<?>[]{int.class, boolean.class, boolean.class},
-                                            pos, false, false);
-                                }
-                            } catch (Throwable ignored) {
-                            }
-                        });
-                    }
-                } catch (Throwable t) {
-                    XDFHook.logw(TAG, "chooser cell bind failed: " + t);
-                }
-                return r;
-            });
-            XDFHook.logi(TAG, "hooked: ChooserListAdapter.onBindView (C3, item click unlocked)");
-        } catch (Throwable t) {
-            XDFHook.logw(TAG, "onBindView skipped: " + t);
-        }
-    }
-
-    /** 在 ChooserListAdapter 中按引用反查 TargetInfo 的 position */
-    private static int findAdapterPosition(Object adapter, Object info) throws Exception {
-        Method count = Reflect.findDeclared(adapter.getClass(), "getCount", new Class<?>[0]);
-        Method get = Reflect.findDeclared(adapter.getClass(), "getItem", new Class<?>[]{int.class});
-        int n = (Integer) count.invoke(adapter);
-        for (int i = 0; i < n; i++) {
-            if (get.invoke(adapter, i) == info) {
-                return i;
-            }
-        }
-        return -1;
+     * 【为什么必须掐】
+     *  zeus 的 sharedUserId 是 android.uid.system（uid=1000），而 AMS 的
+     *  checkBroadcastFromSystem 对「uid1000 发非 protected 广播」逐条
+     *  Slog.wtf("Sending non-protected broadcast cn.xdf.zeus.sdk.living ...")。
+     *  设备实测（2026-09-25）：
+     *    I/am_wtf (1062): [...,ActivityManager,Sending non-protected broadcast
+     *      cn.xdf.zeus.sdk.living from system 3006:cn.xdf.zeus/1000]
+     *  且因为是「按已装应用逐个发」，单次 startAllAppLiving 就是一场
+     *  广播风暴（本机几百个包）；这正是 2026-08-28 system_server 濒死事故的
+     *  同款成因（uid1000 自定义广播 → wtf → dropbox 高频写盘）。
+     *
+     * 【为什么切在 startLivingApp 而不是 checkAppMetaDataExemptedAppLiving】
+     *  后者有两个调用方：AppLivingManager.startAppLiving（发广播）和
+     *  CoreRouterImpl.checkAppMetaDataExemptedAppLiving（对外查询 API）。
+     *  改返回值会连查询语义一起改掉；切发送点只杀广播，零副作用。
+     *
+     * 【语义一致性】living 广播是管控链路的一环（通知被管控应用"家长端在线"），
+     *  "解除管控"本就应该断掉它，故此 hook 不属于误伤。
+     */
+    private static void hookZeusLivingBroadcast(ClassLoader cl) {
+        XDFHook.safeHook(cl,
+                "cn.xdf.zeus.core.manager.app.living.AppLivingManager",
+                "startLivingApp",
+                new Class<?>[]{Context.class, String.class},
+                chain -> null,   // private final void，完全接管 = 不发广播
+                "AppLivingManager.startLivingApp -> no-op "
+                        + "(kill zeus living broadcast storm / system_server_wtf)");
     }
 
     /* ==================================================================
@@ -291,6 +213,9 @@ final class ZeusUnlocker {
 
         // B2 豁免开关
         hookExempted(cl);
+
+        // B5 掐断 living 心跳广播（system_server_wtf 的源头）
+        hookZeusLivingBroadcast(cl);
 
         // B3 云控短路：区分两类命令（逆向确认 25 个命令）——
 //  · 查询型（is*/get* 及 stylusSystemGestureDisabled，共 7 个：isFocusModeStatus /

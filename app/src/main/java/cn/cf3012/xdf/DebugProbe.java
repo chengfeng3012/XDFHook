@@ -31,10 +31,10 @@ public final class DebugProbe {
 
     private static volatile String sProcName = "unknown";
 
-    /** 记一行（当前仅 logcat）；绝不抛出 */
+    /** 记一行：并入统一日志通道（logcat tag=XDFHook + framework api.log），绝不抛出 */
     public static void log(String msg) {
         try {
-            Log.println(Log.INFO, TAG, msg);
+            FileLogger.log(Log.INFO, "debug", msg);
         } catch (Throwable ignored) {
         }
     }

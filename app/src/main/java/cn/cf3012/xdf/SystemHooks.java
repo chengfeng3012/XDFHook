@@ -1,31 +1,28 @@
 package cn.cf3012.xdf;
 
-import android.view.View;
-
-import java.lang.reflect.Method;
 import java.util.Collections;
-import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * SystemHooks — framework 分享/选择器修复（原独立模块 XposedModule / XdfHook 整合）。
+ * SystemHooks — framework 分享/选择器修复的调度入口。
  *
- * 1. ResolverActivity.onButtonClick："仅此一次/始终"按钮被 ROM 阉割（删除了
- *    startSelected 调用），before 重算选中项并恢复调用，完全接管原方法。
+ * 本类只负责分发，两个具体修复各自独立成类：
  *
- * 2. ChooserActivity 分享面板点击修复（Android 10 / API 29）：
- *    startSelected(IZZ) 里 targetInfoForPosition 命中 NotSelectableTargetInfo
- *    （EmptyTargetInfo / PlaceHolderTargetInfo 的基类，所有方法含 start 都是
- *    空实现）会直接 return-void，点击被吞掉，且不能简单"放行"（会 NPE）。
- *    招1（主）：completeServiceTargetLoading 后清掉 mServiceTargets 中的
- *              NotSelectable 占位目标，让点击落位到真实目标；
- *    招2（兜底）：startSelected 命中 NotSelectable 时，手动找真实目标走
- *              onTargetSelected + finish，完全接管原方法。
+ * 1. ResolverActivity 按钮 → {@link ResolverAlwaysRestore}
+ *    ROM 删除了 mAlwaysButton 字段、resetButtonBar 的按钮绑定，并截断了
+ *    onButtonClick 内的 startSelected 调用（导致「仅此一次」空转）。
+ *    新实现按 AOSP 原版语义同时分派 once/always，并动态插入「始终」按钮。
  *
- * 注：ResolverActivity/ChooserActivity 是 framework 类，本 hook 对 scope 内
- * 所有进程生效；触摸/键盘无反应的另一层修复（item 点击监听补注册）在
- * ZeusUnlocker C 组，两者配合使用。
+ * 2. ChooserActivity 图标点击 → {@link ChooserClickRestore}
+ *    ROM 删除了 loadViewsIntoRow 中给每个 cell 绑定
+ *    OnClickListener(ChooserRowAdapter$2) 与
+ *    OnLongClickListener(ChooserRowAdapter$3) 的两段代码，
+ *    且 $2/$3 两个内部类一并消失，导致图标点击完全无响应。
+ *    新实现单 hook loadViewsIntoRow，100% 复刻 $2/$3 语义。
+ *
+ * 注：两个修复都经逐条 smali 指令比对确认缺口边界，只补被删的部分，
+ * 不改动 ROM 保留的逻辑。详见各实现类的注释。
  */
 final class SystemHooks {
 
@@ -57,189 +54,46 @@ final class SystemHooks {
     /* ==================== ResolverActivity ==================== */
 
     /**
-     * 修复 ResolverActivity 的"仅此一次"按钮：
-     * onButtonClick 中 ROM 删除了 startSelected 调用。
-     * 恢复逻辑（与 AOSP 原版一致）：hasFilteredItem 时取 getFilteredPosition
-     * （filtered=false），否则取 getCheckedItemPosition（filtered=true），
-     * 再 startSelected(which, false=仅此一次, filtered)，完全接管原方法。
+     * ResolverActivity 按钮修复已迁移到 {@link ResolverAlwaysRestore}。
+     *
+     * 迁移原因：原实现只补了 startSelected(which, false=仅此一次, ...)，
+     * 恒为 once，无法支持「始终」；且 ROM 已删除 mAlwaysButton 字段与
+     * resetButtonBar 里的绑定，需要一并恢复按钮 UI。新的 ResolverAlwaysRestore
+     * 按 AOSP 原版语义同时分派 once/always（含网页类 showSettingsForSelected
+     * 分支），并动态插入 always 按钮。
+     *
+     * 保留本方法名作为调用点（由 SystemHooks.hookAll 调用），避免改动调度。
      */
-    private static void hookResolverButton(ClassLoader cl) throws Exception {
-        Class<?> resolver = Reflect.findClass("com.android.internal.app.ResolverActivity", cl);
-        Method m = Reflect.findDeclared(resolver, "onButtonClick", new Class<?>[]{View.class});
-        m.setAccessible(true);
-        XDFHook.hook(m, chain -> {
-            try {
-                Object thiz = chain.getThisObject();
-                Object adapter = Reflect.getField(thiz, "mAdapter");
-                Object adapterView = Reflect.getField(thiz, "mAdapterView");
-
-                int which = -1;
-                boolean filtered = false;
-                boolean hasFilteredItem =
-                        (Boolean) Reflect.call(adapter, "hasFilteredItem", null);
-                if (hasFilteredItem) {
-                    which = (Integer) Reflect.call(adapter, "getFilteredPosition", null);
-                    filtered = false;
-                } else if (adapterView != null) {
-                    which = (Integer) Reflect.call(adapterView, "getCheckedItemPosition", null);
-                    filtered = true;
-                }
-                XDFHook.logi(TAG, "onButtonClick which=" + which + " filtered=" + filtered);
-
-                if (which >= 0) {
-                    Reflect.call(thiz, "startSelected",
-                            new Class<?>[]{int.class, boolean.class, boolean.class},
-                            which, false, filtered);
-                    XDFHook.logi(TAG, "startSelected called successfully");
-                } else {
-                    XDFHook.logi(TAG, "no item selected, skipping startSelected");
-                }
-                return null;            // 完全接管原方法
-            } catch (Throwable t) {
-                XDFHook.loge(t, TAG, "onButtonClick hook");
-                return chain.proceed(); // 出错时回退原逻辑
-            }
-        });
-        XDFHook.logi(TAG, "hooked: ResolverActivity.onButtonClick");
+    private static void hookResolverButton(ClassLoader cl) {
+        ResolverAlwaysRestore.hookAll(cl);
     }
 
     /* ==================== ChooserActivity ==================== */
 
-    private static void hookChooser(ClassLoader cl) throws Exception {
-        Class<?> chooser = Reflect.findClass("com.android.internal.app.ChooserActivity", cl);
-        Class<?> notSelectable = Reflect.findClass(
-                "com.android.internal.app.ChooserActivity$NotSelectableTargetInfo", cl);
-
-        hookClearPlaceholders(cl, notSelectable);
-        hookStartSelectedFallback(cl, chooser, notSelectable);
-        XDFHook.logi(TAG, "hooked: ChooserActivity (placeholder clear + startSelected fallback)");
+    /**
+     * ChooserActivity 点击修复已迁移到 {@link ChooserClickRestore}（单 hook
+     * loadViewsIntoRow，100% 复刻 AOSP 的 $2/$3 监听器绑定）。
+     *
+     * 【原两招为何整体删除】—— 逐方法核对 smali 后的结论：
+     *  招1 completeServiceTargetLoading 后清 mServiceTargets 的 NotSelectable：
+     *      该方法 ROM 【未改动】（两边均 14 指令），且其 removeIf + 空列表补
+     *      EmptyTargetInfo 正是「服务目标异步加载」的正常设计。强行删占位符会
+     *      破坏列表项数与实际目标的一致性，属有害操作。
+     *  招2 startSelected 命中 NotSelectable 时转发现实目标：
+     *      该早退 ROM 【未改动】（.line 1285-1286 保留），且仅
+     *      EmptyTargetInfo / PlaceHolderTargetInfo 继承 NotSelectableTargetInfo
+     *      （SelectableTargetInfo extends Object，不受影响）—— 正常目标根本
+     *      不会命中。findRealTarget 扫描 mCallerTargets/mDisplayList 属猜测式
+     *      定位，可能转发到错误目标。
+     *
+     * 真正的缺口只是 loadViewsIntoRow 里被删的两次 setXxxListener，
+     * 前后（含 RowViewHolder.mItemIndices 映射表与 bindViewHolder 填充逻辑）
+     * ROM 全部完好，因此单点修复即可，无需任何数据层改写。
+     *
+     * 保留本方法名作为调用点（由 SystemHooks.hookAll 调用），避免改动调度。
+     */
+    private static void hookChooser(ClassLoader cl) {
+        ChooserClickRestore.hookAll(cl);
     }
 
-    /** 招1（主）：服务目标加载完成后清掉 mServiceTargets 中的不可选占位目标 */
-    private static void hookClearPlaceholders(ClassLoader cl, final Class<?> notSelectable)
-            throws Exception {
-        Class<?> listAdapter = Reflect.findClass(
-                "com.android.internal.app.ChooserActivity$ChooserListAdapter", cl);
-        Method m = Reflect.findDeclared(listAdapter, "completeServiceTargetLoading",
-                new Class<?>[0]);
-        m.setAccessible(true);
-        XDFHook.hook(m, chain -> {
-            chain.proceed();
-            Object adapter = chain.getThisObject(); // void 方法 proceed() 返回 null
-            try {
-                Object targets = Reflect.getField(adapter, "mServiceTargets");
-                if (targets instanceof List) {
-                    List<?> list = (List<?>) targets;
-                    int before = list.size();
-                    boolean removed = list.removeIf(t -> t != null && notSelectable.isInstance(t));
-                    XDFHook.logi(TAG, "completeServiceTargetLoading size " + before
-                            + " -> " + list.size() + ", removed=" + removed);
-                    if (removed) {
-                        Reflect.call(adapter, "notifyDataSetChanged", null);
-                    }
-                }
-                return adapter;
-            } catch (Throwable t) {
-                XDFHook.loge(t, TAG, "completeServiceTargetLoading hook");
-                return adapter;
-            }
-        });
-    }
-
-    /** 招2（兜底）：startSelected 命中 NotSelectableTargetInfo 时转发给真实目标 */
-    private static void hookStartSelectedFallback(ClassLoader cl, Class<?> chooser,
-                                                  final Class<?> notSelectable) throws Exception {
-        Method m = Reflect.findDeclared(chooser, "startSelected",
-                new Class<?>[]{int.class, boolean.class, boolean.class});
-        m.setAccessible(true);
-        XDFHook.hook(m, chain -> {
-            // ---- 探测阶段：只读取与判定；失败时还未 proceed，可安全回退原方法 ----
-            int which;
-            boolean always;
-            boolean filtered;
-            Object thiz;
-            Object adapter;
-            Object target;
-            try {
-                which = (Integer) chain.getArg(0);
-                always = (Boolean) chain.getArg(1);
-                filtered = (Boolean) chain.getArg(2);
-                thiz = chain.getThisObject();
-                adapter = Reflect.getField(thiz, "mChooserListAdapter");
-                target = adapter == null ? null
-                        : Reflect.call(adapter, "targetInfoForPosition",
-                                new Class<?>[]{int.class, boolean.class}, which, filtered);
-            } catch (Throwable t) {
-                XDFHook.loge(t, TAG, "startSelected fallback probe");
-                return chain.proceed();     // 尚未 proceed，安全回退
-            }
-
-            if (target == null || !notSelectable.isInstance(target)) {
-                // 正常目标，放行原逻辑
-                XDFHook.logi(TAG, "startSelected pos=" + which + " filtered=" + filtered
-                        + " target="
-                        + (target == null ? "null" : target.getClass().getSimpleName())
-                        + " -> passthrough");
-                return chain.proceed();
-            }
-
-            // ---- 命中 NotSelectable：转发真实目标并完全接管（不再执行原方法，
-            //      原方法对 NotSelectable 只会吞掉点击，且不可二次 proceed）----
-            XDFHook.logi(TAG, "forwarding NotSelectable at pos " + which);
-            try {
-                Object real = findRealTarget(adapter, notSelectable);
-                if (real != null) {
-                    XDFHook.logi(TAG, "forwarding to real target "
-                            + real.getClass().getSimpleName());
-                    Object ok = Reflect.call(thiz, "onTargetSelected",
-                            new Class<?>[]{
-                                    Reflect.findClass(
-                                            "com.android.internal.app.ResolverActivity$TargetInfo", cl),
-                                    boolean.class},
-                            real, always);
-                    if (Boolean.TRUE.equals(ok)) {
-                        Reflect.call(thiz, "finish", null);
-                    }
-                } else {
-                    XDFHook.logi(TAG, "findRealTarget returned null, cannot forward");
-                }
-            } catch (Throwable t) {
-                XDFHook.loge(t, TAG, "startSelected fallback");
-            }
-            return null;
-        });
-    }
-
-    /** 在 caller 直达目标 / ranked 应用列表里找第一个真实可启动的目标 */
-    private static Object findRealTarget(Object adapter, Class<?> notSelectable) {
-        try {
-            Object caller = Reflect.getField(adapter, "mCallerTargets");
-            if (caller instanceof List) {
-                for (Object t : (List<?>) caller) {
-                    if (t != null && !notSelectable.isInstance(t)) {
-                        return t;
-                    }
-                }
-            }
-            int n = (Integer) Reflect.call(adapter, "getDisplayResolveInfoCount", null);
-            for (int i = 0; i < n; i++) {
-                Object t = Reflect.call(adapter, "getDisplayResolveInfo",
-                        new Class<?>[]{int.class}, i);
-                if (t != null && !notSelectable.isInstance(t)) {
-                    return t;
-                }
-            }
-            // 兜底：直接读 mDisplayList 字段
-            Object displayList = Reflect.getField(adapter, "mDisplayList");
-            if (displayList instanceof List) {
-                for (Object t : (List<?>) displayList) {
-                    if (t != null && !notSelectable.isInstance(t)) {
-                        return t;
-                    }
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-        return null;
-    }
 }

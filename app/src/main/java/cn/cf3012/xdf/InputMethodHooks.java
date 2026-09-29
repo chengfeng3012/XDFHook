@@ -140,16 +140,25 @@ final class InputMethodHooks {
         for (String className : candidates) {
             try {
                 Class<?> imms = Class.forName(className, false, cl);
-                // 要拦截的方法名集合
+                // 要拦截的方法名集合。
+                // 【MT2 实测 XDF_framework.apk 的 IMMS 真实方法表】
+                //   setInputMethod(IBinder,String)V                     ✅ binder 入口
+                //   setInputMethodAndSubtype(IBinder,String,Subtype)V  ✅ binder 入口
+                //   setInputMethodLocked(String,int)V                   ★ 真正落地的收口
+                //   setInputMethodWithSubtypeIdLocked(IBinder,String,int)V ★ locked 变体
+                //   handleShellCommandSetInputMethod(ShellCommand)I     ← ime set 走这里
+                // 而 switchInputMethod / setInputMethodAndSubtypeForUser /
+                // setInputMethodEnabled / setInputMethodEnabledForUser 在 XDF 里
+                // 【根本不存在】，旧列表因此只匹配到 2 个方法（=日志里的 "x2"），
+                // ime set 的实际路径完全没被覆盖。
                 Set<String> targetMethods = new HashSet<>(Arrays.asList(
-                        "setInputMethod",                 // (IBinder, String)
-                        "switchInputMethod",              // (String)
-                        "setInputMethodAndSubtype",       // (IBinder, String, Subtype)
-                        "setInputMethodAndSubtypeForUser",// (IBinder, String, Subtype, int)
-                        "setInputMethodEnabled",          // (String, boolean)
-                        "setInputMethodEnabledForUser"    // (String, boolean, int)
+                        "setInputMethod",                      // (IBinder, String)
+                        "setInputMethodAndSubtype",            // (IBinder, String, Subtype)
+                        "setInputMethodLocked",                // (String, int)  ★ 核心
+                        "setInputMethodWithSubtypeIdLocked"    // (IBinder, String, int)
                 ));
                 int hooked = 0;
+                StringBuilder hookedNames = new StringBuilder();
                 for (Class<?> k = imms; k != null && k != Object.class; k = k.getSuperclass()) {
                     for (Method m : k.getDeclaredMethods()) {
                         if (!targetMethods.contains(m.getName())) {
@@ -157,6 +166,10 @@ final class InputMethodHooks {
                         }
                         m.setAccessible(true);
                         final String methodName = m.getName();
+                        // system_server 跑在 boot image（AOT）里，短小方法可能被
+                        // 内联进调用方，导致 hook 形同虚设（Settings$Secure.putString
+                        // 就属于这类）。deoptimize 强制 ART 走真实方法体。
+                        XDFHook.deopt(m);
                         XDFHook.hook(m, chain -> {
                             AppConfig cfg = AppConfig.get();
                             if (!cfg.hookEnabled(AppConfig.SCOPE_SYSTEM, AppConfig.H_IME_GUARD)) {
@@ -178,9 +191,12 @@ final class InputMethodHooks {
                             return chain.proceed();
                         });
                         hooked++;
+                        hookedNames.append(methodName).append('/')
+                                .append(m.getParameterCount()).append(' ');
                     }
                 }
-                XDFHook.logi(TAG, "IMMS hooks installed: " + className + " x" + hooked);
+                XDFHook.logi(TAG, "IMMS hooks installed: " + className + " x" + hooked
+                        + " -> " + hookedNames);
                 return; // 找到类就停
             } catch (ClassNotFoundException ignored) {
             }
@@ -195,15 +211,27 @@ final class InputMethodHooks {
             return null;
         }
         try {
-            // switchInputMethod(String) / setInputMethodEnabled(String, boolean) → 第 0 个
-            if ("switchInputMethod".equals(methodName)
-                    || "setInputMethodEnabled".equals(methodName)
-                    || "setInputMethodEnabledForUser".equals(methodName)) {
-                return args.get(0) instanceof String ? (String) args.get(0) : null;
+            // 【通用取法】所有目标方法的 IME id 都是「第一个 String 参数」：
+            //   setInputMethod(IBinder,String)              → args[1]
+            //   setInputMethodAndSubtype(IBinder,String,..)  → args[1]
+            //   setInputMethodLocked(String,int)            → args[0]  ★ 新增
+            //   setInputMethodWithSubtypeIdLocked(IBinder,String,int) → args[1]
+            // 与其按方法名硬编码下标（XDF 与 AOSP 签名不一致时必错），不如直接
+            // 扫第一个 String —— 再用 '/' 特征做一次确认，避免抓到无关字符串。
+            for (Object a : args) {
+                if (a instanceof String) {
+                    String s = (String) a;
+                    if (s.indexOf('/') > 0) {
+                        return s;
+                    }
+                }
             }
-            // setInputMethod(IBinder, String) / setInputMethodAndSubtype(..., String, ...) → 第 1 个
-            return args.size() > 1 && args.get(1) instanceof String
-                    ? (String) args.get(1) : null;
+            for (Object a : args) {
+                if (a instanceof String) {
+                    return (String) a;
+                }
+            }
+            return null;
         } catch (Throwable t) {
             return null;
         }
@@ -245,6 +273,12 @@ final class InputMethodHooks {
 
         int mode = cfg.getInt(K_INPUT_METHOD_MODE, MODE_LOCK);
         String caller = callerProcessName();
+
+        // 诊断：IME 相关键每次都经过这里，debug 级记一行（不进 api.log 聚合通道，
+        // 只在 logcat），用来确认 Settings 这层兜底是否真的被触发到
+        // （boot image 内联导致 hook 失效时，这里会完全没有输出）。
+        XDFHook.logd(TAG, "putString " + table + " key=" + key + " value=" + value
+                + " mode=" + mode + " caller=" + caller + " -> evaluating");
 
         if (mode == MODE_LOCK) {
             // 固化模式：阻止任何更改（除模块自身外）

@@ -6,17 +6,21 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * LogParser — 解析 FileLogger 的行格式（IPC 广播上行版）。
+ * LogParser — 解析 logcat 行（重构后的默认日志通道）。
  *
- * 行格式：MM-dd HH:mm:ss.SSS L/TAG [procName] message
- * （进程名在广播 extra 中也有一份；批量文本内逐行重复携带，两处冗余容错）
+ * 取数命令：logcat -d -v threadtime -t 2000 -s XDFHook
+ * 行格式：MM-dd HH:mm:ss.SSS  PID TID L XDFHook: [进程名][子标签] message
+ *
+ * FileLogger 固定用 LOGCAT_TAG="XDFHook" 打 tag，进程名与子标签放在消息体前缀里，
+ * 于是「按 tag 过滤全部模块日志」退化成一条 logcat -s XDFHook，
+ * 不再需要枚举各子模块的 tag（ime / cfg / resolver / chooser / system ...）。
  */
 public final class LogParser {
 
     public static final class Line {
         public final String time;   // MM-dd HH:mm:ss.SSS
         public final char level;    // V/D/I/W/E
-        public final String tag;
+        public final String tag;    // 子标签，如 ime / cfg / XDFHook
         public final String proc;   // 产生日志的 hook 进程名
         public final String msg;
 
@@ -34,26 +38,36 @@ public final class LogParser {
     }
 
     private static final Pattern P = Pattern.compile(
-            "^(\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}) ([VDIWE])/([^ ]+) \\[([^\\]]+)\\] (.*)$",
-            Pattern.MULTILINE);
+            "^(\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3})\\s+\\d+\\s+\\d+\\s+"
+                    + "([VDIWE])\\s+\\S+:\\s+\\[([^\\]]*)\\]\\[([^\\]]*)\\]\\s?(.*)$");
 
     private LogParser() {
     }
 
-    /** 解析广播批量文本；proc 为该批次的进程名（extra），行内 [proc] 优先 */
-    public static List<Line> parse(String text, String batchProc) {
+    /** 解析 logcat 输出；无法匹配的行走默认分支（tag 记 XDFHook，proc 记 unknown） */
+    public static List<Line> parseLogcat(String text) {
         List<Line> out = new ArrayList<>();
-        if (text == null) {
+        if (text == null || text.isEmpty()) {
             return out;
         }
-        Matcher m = P.matcher(text);
-        while (m.find()) {
-            String proc = m.group(4);
-            if (proc == null || proc.isEmpty()) {
-                proc = batchProc != null ? batchProc : "unknown";
+        for (String raw : text.split("\\r?\\n")) {
+            if (raw.isEmpty()) {
+                continue;
             }
-            out.add(new Line(m.group(1), m.group(2).charAt(0), m.group(3), proc, m.group(5)));
+            Matcher m = P.matcher(raw);
+            if (m.matches()) {
+                out.add(new Line(m.group(1), m.group(2).charAt(0),
+                        emptyTo(m.group(4), FileLogger.LOGCAT_TAG),
+                        emptyTo(m.group(3), "unknown"),
+                        m.group(5)));
+            } else {
+                out.add(new Line("", 'I', FileLogger.LOGCAT_TAG, "unknown", raw));
+            }
         }
         return out;
+    }
+
+    private static String emptyTo(String s, String def) {
+        return (s == null || s.isEmpty()) ? def : s;
     }
 }

@@ -60,6 +60,7 @@ public final class AppConfig {
     public static final String H_IME_GUARD = "imeGuard";            // 输入法保护
     public static final String H_SHARE_CHOOSER = "shareChooser";    // 分享面板修复
     public static final String H_SETTINGS_UNLOCK = "settingsUnlock"; // 完整设置
+    public static final String H_LOCK_UNLOCK = "lockUnlock";        // 锁屏方式恢复（滑动/PIN/图案/密码）
     public static final String H_RECENT_TASKS = "recentTasks";      // 桌面增强（最近任务）
     public static final String H_GALLERY_EDIT = "galleryEdit";      // 图片编辑
     public static final String H_INSTALL_UNLOCK = "installUnlock";  // 自由安装
@@ -96,16 +97,9 @@ public final class AppConfig {
             "XDF-X1-S", "XDF-N1-GM", "XDF-N2-GM", "XDF-X1-GM"
     };
 
-    /** 日志落盘配置 */
-    public static final String K_LOG_FILE_ENABLED = "log_file_enabled";
-    public static final String K_LOG_FILE_PATH = "log_file_path";
-    public static final String K_LOG_FILE_CAP_KB = "log_file_cap_kb";
-
-    /** 默认落盘路径与上限（KB） */
-    public static final String DEFAULT_LOG_PATH = "/sdcard/Android/XDFHook.log";
-    public static final int DEFAULT_LOG_CAP_KB = 1024;
-    public static final int MIN_LOG_CAP_KB = 1;
-    public static final int MAX_LOG_CAP_KB = 102400;
+    // 注：原「日志落盘」三项（log_file_enabled / log_file_path / log_file_cap_kb）
+    // 已随 FileLogger 重构删除：hook 进程不再写任何文件，日志统一走 logcat +
+    // framework api.log()，无需路径/上限配置。
 
     public boolean master = true;
 
@@ -122,6 +116,7 @@ public final class AppConfig {
     public boolean hZeusSpoofDevice = true;       // 设备信息伪装
     // settings
     public boolean hSettingsUnlock = true;        // 完整设置
+    public boolean hSettingsLockUnlock = true;    // 锁屏方式恢复（与「完整设置」相互独立）
     // launcher
     public boolean hLauncherRecentTasks = true;   // 桌面增强
     public boolean hLauncherHomeUnlock = true;    // 默认桌面解锁（launcher block）
@@ -136,10 +131,6 @@ public final class AppConfig {
     /** Zeus 设备信息冒充；空串 = 未设置（上报真实） */
     public String zeusModel = "";
     public String zeusSn = "";
-    /** 日志落盘：开关 / 路径 / 上限(KB) */
-    public boolean logFileEnabled = true;
-    public String logFilePath = DEFAULT_LOG_PATH;
-    public int logFileCapKb = DEFAULT_LOG_CAP_KB;
 
     /** 底层通道：null = 未初始化或降级到文件 */
     private static volatile SharedPreferences sRemote;
@@ -417,6 +408,7 @@ public final class AppConfig {
             c.hZeusSpoofDevice = p.getBoolean(hookKey(SCOPE_ZEUS, H_SPOOF_DEVICE), true);
             // settings
             c.hSettingsUnlock = p.getBoolean(hookKey(SCOPE_SETTINGS, H_SETTINGS_UNLOCK), true);
+            c.hSettingsLockUnlock = p.getBoolean(hookKey(SCOPE_SETTINGS, H_LOCK_UNLOCK), true);
             // launcher
             c.hLauncherRecentTasks = p.getBoolean(hookKey(SCOPE_LAUNCHER, H_RECENT_TASKS), true);
             c.hLauncherHomeUnlock = p.getBoolean(hookKey(SCOPE_LAUNCHER, H_HOME_UNLOCK), true);
@@ -429,9 +421,6 @@ public final class AppConfig {
             c.inputMethodList = p.getString(K_INPUT_METHOD_LIST, "");
             c.zeusModel = p.getString(K_ZEUS_MODEL, "");
             c.zeusSn = p.getString(K_ZEUS_SN, "");
-            c.logFileEnabled = p.getBoolean(K_LOG_FILE_ENABLED, true);
-            c.logFilePath = p.getString(K_LOG_FILE_PATH, DEFAULT_LOG_PATH);
-            c.logFileCapKb = clampLogCapKb(p.getInt(K_LOG_FILE_CAP_KB, DEFAULT_LOG_CAP_KB));
         } catch (Throwable t) {
             return readFromFile();
         }
@@ -444,17 +433,6 @@ public final class AppConfig {
 
     private static int clampInputMethodMode(int mode) {
         return (mode < 0 || mode > 1) ? 0 : mode;
-    }
-
-    /** 日志上限(KB)夹紧到合法区间；非法路径也兜底 */
-    private static int clampLogCapKb(int kb) {
-        if (kb < MIN_LOG_CAP_KB) {
-            return MIN_LOG_CAP_KB;
-        }
-        if (kb > MAX_LOG_CAP_KB) {
-            return MAX_LOG_CAP_KB;
-        }
-        return kb;
     }
 
     /* ==================== 写入（UI 侧） ==================== */
@@ -551,6 +529,7 @@ public final class AppConfig {
             c.hZeusUnlockControl = getP(p, hookKey(SCOPE_ZEUS, H_UNLOCK_CTRL), true);
             c.hZeusSpoofDevice = getP(p, hookKey(SCOPE_ZEUS, H_SPOOF_DEVICE), true);
             c.hSettingsUnlock = getP(p, hookKey(SCOPE_SETTINGS, H_SETTINGS_UNLOCK), true);
+            c.hSettingsLockUnlock = getP(p, hookKey(SCOPE_SETTINGS, H_LOCK_UNLOCK), true);
             c.hLauncherRecentTasks = getP(p, hookKey(SCOPE_LAUNCHER, H_RECENT_TASKS), true);
             c.hLauncherHomeUnlock = getP(p, hookKey(SCOPE_LAUNCHER, H_HOME_UNLOCK), true);
             c.hGalleryEdit = getP(p, hookKey(SCOPE_GALLERY, H_GALLERY_EDIT), true);
@@ -560,9 +539,6 @@ public final class AppConfig {
             c.inputMethodList = p.getProperty(K_INPUT_METHOD_LIST, "");
             c.zeusModel = p.getProperty(K_ZEUS_MODEL, "");
             c.zeusSn = p.getProperty(K_ZEUS_SN, "");
-            c.logFileEnabled = getP(p, K_LOG_FILE_ENABLED, true);
-            c.logFilePath = p.getProperty(K_LOG_FILE_PATH, DEFAULT_LOG_PATH);
-            c.logFileCapKb = clampLogCapKb(getI(p, K_LOG_FILE_CAP_KB, DEFAULT_LOG_CAP_KB));
         } catch (Throwable ignored) {
         }
         return c;
@@ -583,15 +559,28 @@ public final class AppConfig {
     }
 
     private static boolean writeLegacy(String key, String value) {
+        Properties p;
         try {
-            Properties p;
+            p = loadProps();
+        } catch (Throwable t) {
+            p = new Properties();
+        }
+        p.setProperty(key, value);
+        if (writePropsDirect(p)) {
+            return true;
+        }
+        // /data/local/tmp 是 0771 shell:shell —— 普通应用只有 x（可穿越不可写），
+        // 直写必然失败。但它对本模块的 hook 进程（uid 1000）可读，所以
+        // 「root 写 + chmod 666」是一条真实可用的降级路径：daemon service
+        // 不可用时（实测：模块更新后 app 进程可能永久错过 binder 送达），
+        // 配置仍能保存下来，不至于让用户所有开关都存不进去。
+        return writePropsViaRoot(p);
+    }
+
+    /** 直写 legacy 文件（app 自身有权限时） */
+    private static boolean writePropsDirect(Properties p) {
+        try {
             File f = new File(PATH);
-            try {
-                p = loadProps();
-            } catch (Throwable t) {
-                p = new Properties();
-            }
-            p.setProperty(key, value);
             Writer w = new OutputStreamWriter(new FileOutputStream(f), "UTF-8");
             try {
                 p.store(w, "XDFHook config (legacy fallback)");
@@ -604,6 +593,46 @@ public final class AppConfig {
             try {
                 android.system.Os.chmod(PATH, 0666);
             } catch (Throwable ignored) {
+            }
+            sFileCache = readFromFile();
+            sFileLoadedAt = SystemClock.elapsedRealtime();
+            return true;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    /** 当前进程名（ActivityThread.currentProcessName 是 @hide，反射取） */
+    private static String currentProcessName() {
+        try {
+            Class<?> at = Class.forName("android.app.ActivityThread");
+            java.lang.reflect.Method m = at.getDeclaredMethod("currentProcessName");
+            m.setAccessible(true);
+            Object v = m.invoke(null);
+            return v instanceof String ? (String) v : null;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /**
+     * 经 root 写 legacy 配置（仅限本模块 UI 进程调用）。
+     * 内容走 base64 传输，避免任何 shell/Properties 转义问题。
+     */
+    private static boolean writePropsViaRoot(Properties p) {        try {
+            // 只在模块自己的 UI 进程里做（hook 进程绝不能 fork su）
+            String proc = currentProcessName();
+            if (proc == null || !proc.equals("cn.cf3012.xdf")) {
+                return false;
+            }
+            java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+            p.store(bos, "XDFHook config (legacy fallback, via root)");
+            String b64 = android.util.Base64.encodeToString(bos.toByteArray(),
+                    android.util.Base64.NO_WRAP);
+            String cmd = "echo '" + b64 + "' | base64 -d > " + PATH
+                    + " && chmod 666 " + PATH;
+            if (!Root.exec(cmd)) {
+                return false;
             }
             sFileCache = readFromFile();
             sFileLoadedAt = SystemClock.elapsedRealtime();
@@ -645,6 +674,7 @@ public final class AppConfig {
             if (H_SPOOF_DEVICE.equals(hook)) return hZeusSpoofDevice;
         } else if (SCOPE_SETTINGS.equals(scope)) {
             if (H_SETTINGS_UNLOCK.equals(hook)) return hSettingsUnlock;
+            if (H_LOCK_UNLOCK.equals(hook)) return hSettingsLockUnlock;
         } else if (SCOPE_LAUNCHER.equals(scope)) {
             if (H_RECENT_TASKS.equals(hook)) return hLauncherRecentTasks;
             if (H_HOME_UNLOCK.equals(hook)) return hLauncherHomeUnlock;
