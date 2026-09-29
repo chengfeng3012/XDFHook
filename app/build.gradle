@@ -5,18 +5,24 @@ plugins {
 }
 
 // ----------------- release 签名（固定 key，来自环境变量 / CI secrets） -----------------
-// 未提供环境变量时 release 不签名（产未签名包）；debug 始终走自动 debug.keystore。
-// 本轮改造目的：让每次 CI release 用同一个 key，保证跨版本无缝覆盖安装，而非每次随机证书。
+// 签名来源优先级：环境变量(CI) > 仓库内 keystore/ > 无。
+// 取到签名材料时，debug 与 release 使用同一把 key（可互相覆盖安装）；
+// 都取不到时：debug 退回 AGP 自动 debug.keystore，release 产出未签名包。
 def appStoreFile = System.getenv('APP_KEYSTORE_FILE')
 def appStorePass = System.getenv('APP_KEYSTORE_PASS')
 def appKeyAlias = System.getenv('APP_KEY_ALIAS')
 def appKeyPass = System.getenv('APP_KEY_PASS')
 
-// 本地固定签名：优先环境变量（CI 注入）；否则回退到仓库外备份的 release keystore。
+// 本地固定签名：优先级 = 环境变量(CI 注入) > 仓库内 keystore/ 目录 > 无。
 // 这样 debug 与 release 同签名，可互相覆盖安装；LSPosed 也认作同一模块（scope 不丢）。
-// 密码从 creds.txt 运行时读取，不写进 git。
+//
+// 仓库内约定（keystore/ 已在 .gitignore，密钥与口令绝不入库）：
+//   keystore/xdfhook-release.jks
+//   keystore/creds.txt            每行 KEY=VALUE，读取 STORE_PASS / ALIAS
+// 换机器/换 key 时用 -Pxdfhook.localSignDir=/path/to/dir 或环境变量覆盖即可。
+// 两者都没有时：debug 退回 AGP 自动 debug.keystore，release 不签名（未签名包）。
 def localSignDir = file(providers.gradleProperty('xdfhook.localSignDir')
-        .getOrElse('/workspace/xdfhook-sign'))
+        .getOrElse(rootProject.file('keystore').absolutePath))
 def localKeystore = new File(localSignDir, 'xdfhook-release.jks')
 def localCreds = new File(localSignDir, 'creds.txt')
 def localProps = [:]
