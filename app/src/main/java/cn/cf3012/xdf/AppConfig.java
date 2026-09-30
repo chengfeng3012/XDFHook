@@ -51,6 +51,7 @@ public final class AppConfig {
     public static final String SCOPE_LAUNCHER = "com.android.launcher3";
     public static final String SCOPE_GALLERY = "com.android.gallery3d";
     public static final String SCOPE_PACKAGE_INSTALLER = "com.android.packageinstaller";
+    public static final String SCOPE_SYSTEMUI = "com.android.systemui";
 
     /** hook 单元（per-scope 功能开关；键 = scopes.<scope>.hooks.<unit>） */
     public static final String H_UNLOCK_CTRL = "unlockControl";     // 解除管控限制（system A 组 / zeus B 组）
@@ -64,6 +65,7 @@ public final class AppConfig {
     public static final String H_RECENT_TASKS = "recentTasks";      // 桌面增强（最近任务）
     public static final String H_GALLERY_EDIT = "galleryEdit";      // 图片编辑
     public static final String H_INSTALL_UNLOCK = "installUnlock";  // 自由安装
+    public static final String H_QS_FIX = "qsFix";                // 控制中心修复（systemui）
 
     /** scope hook 单元的配置键名 */
     public static String hookKey(String scope, String hook) {
@@ -124,6 +126,8 @@ public final class AppConfig {
     public boolean hGalleryEdit = true;           // 图片编辑
     // packageinstaller
     public boolean hInstallUnlock = true;         // 自由安装
+    // systemui
+    public boolean hSystemuiQsFix = true;          // 控制中心修复
 
     public int logLevel = Log.INFO;
     public int inputMethodMode = 0; // 0=固化, 1=黑名单
@@ -416,6 +420,8 @@ public final class AppConfig {
             c.hGalleryEdit = p.getBoolean(hookKey(SCOPE_GALLERY, H_GALLERY_EDIT), true);
             // packageinstaller
             c.hInstallUnlock = p.getBoolean(hookKey(SCOPE_PACKAGE_INSTALLER, H_INSTALL_UNLOCK), true);
+            // systemui
+            c.hSystemuiQsFix = p.getBoolean(hookKey(SCOPE_SYSTEMUI, H_QS_FIX), true);
             c.logLevel = clampLevel(p.getInt(K_LOG_LEVEL, Log.INFO));
             c.inputMethodMode = clampInputMethodMode(p.getInt(K_INPUT_METHOD_MODE, 0));
             c.inputMethodList = p.getString(K_INPUT_METHOD_LIST, "");
@@ -534,6 +540,7 @@ public final class AppConfig {
             c.hLauncherHomeUnlock = getP(p, hookKey(SCOPE_LAUNCHER, H_HOME_UNLOCK), true);
             c.hGalleryEdit = getP(p, hookKey(SCOPE_GALLERY, H_GALLERY_EDIT), true);
             c.hInstallUnlock = getP(p, hookKey(SCOPE_PACKAGE_INSTALLER, H_INSTALL_UNLOCK), true);
+            c.hSystemuiQsFix = getP(p, hookKey(SCOPE_SYSTEMUI, H_QS_FIX), true);
             c.logLevel = clampLevel(getI(p, K_LOG_LEVEL, Log.INFO));
             c.inputMethodMode = clampInputMethodMode(getI(p, K_INPUT_METHOD_MODE, 0));
             c.inputMethodList = p.getProperty(K_INPUT_METHOD_LIST, "");
@@ -682,6 +689,8 @@ public final class AppConfig {
             if (H_GALLERY_EDIT.equals(hook)) return hGalleryEdit;
         } else if (SCOPE_PACKAGE_INSTALLER.equals(scope)) {
             if (H_INSTALL_UNLOCK.equals(hook)) return hInstallUnlock;
+        } else if (SCOPE_SYSTEMUI.equals(scope)) {
+            if (H_QS_FIX.equals(hook)) return hSystemuiQsFix;
         }
         return true;
     }

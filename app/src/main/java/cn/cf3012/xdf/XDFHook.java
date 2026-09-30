@@ -57,6 +57,7 @@ public class XDFHook extends XposedModule {
     public static final String PKG_PACKAGE_INSTALLER = "com.android.packageinstaller";
     /** framework 分享面板宿主（ChooserActivity/ResolverActivity，proc=android:ui） */
     public static final String PKG_ANDROID = "android";
+    public static final String PKG_SYSTEMUI = "com.android.systemui";
 
     /** 模块接口实例（XposedModule 实例即 XposedInterface），各子模块静态使用 */
     private static volatile XposedInterface sApi;
@@ -325,6 +326,20 @@ public class XDFHook extends XposedModule {
                         }
                     });
                 }
+                break;
+            case PKG_SYSTEMUI:
+                // 系统界面：控制中心（下拉菜单）被阉割修复
+                // 注意：此进程非 system_server，kill 进程重开即可生效（无需重启系统）。
+                if (!cfg.hSystemuiQsFix) {
+                    logi(TAG, "qs fix disabled, skip");
+                    break;
+                }
+                runGuarded("QuickSettingsHooks", new HookInstall() {
+                    @Override
+                    public void run() throws Exception {
+                        QuickSettingsHooks.hookAll(cl);
+                    }
+                });
                 break;
             case PKG_ANDROID:
                 // 分享面板宿主进程（android:ui）：分享面板修复（"仅此一次"/点击修复）

@@ -88,6 +88,10 @@ private fun hooksFor(scope: String): List<HookDef> = when (scope) {
         HookDef(AppConfig.H_INSTALL_UNLOCK, "自由安装", "允许安装任意来源的应用",
             { it.hInstallUnlock }),
     )
+    AppConfig.SCOPE_SYSTEMUI -> listOf(
+        HookDef(AppConfig.H_QS_FIX, "控制中心修复", "下拉菜单可完整展开、按钮恢复分页与排版",
+            { it.hSystemuiQsFix }),
+    )
     else -> emptyList()
 }
 
