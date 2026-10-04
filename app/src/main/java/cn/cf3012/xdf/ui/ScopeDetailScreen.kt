@@ -5,7 +5,9 @@ import android.view.inputmethod.InputMethodManager
 import androidx.activity.compose.BackHandler
 import android.widget.Toast
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -39,6 +41,25 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 
+/**
+ * 哪些 hook 单元「关→开」必须重启目标进程才生效（2026-10）。
+ *
+ * <p><b>判据</b>：XDFHook.onPackageReady 用 `if (cfg.xxx)` 决定<b>要不要安装 hook</b>。
+ * 配置推到进程时 onPackageReady 早已跑完，hook 装不上 → 只能重启目标进程。</p>
+ *
+ * <p><b>反过来「开→关」多数无需重启</b>：只要 hook 体内每事件都有运行时门控
+ * （InputMethodHooks.hookSystemServer 首行、LockScreenHooks.enabled()、
+ * ZeusUnlocker.spoofStrings 每次 AppConfig.get()），关闭立即生效。</p>
+ *
+ * <p>这三个是唯一实现了运行时门控的单元 → 它们的「开启」也属热生效，不在此表内。</p>
+ */
+private val NEEDS_RESTART_ON_ENABLE = setOf(
+    AppConfig.hookKey(AppConfig.SCOPE_SYSTEM, AppConfig.H_IME_GUARD),
+    AppConfig.hookKey(AppConfig.SCOPE_SETTINGS, AppConfig.H_LOCK_UNLOCK),
+    AppConfig.hookKey(AppConfig.SCOPE_ZEUS, AppConfig.H_SPOOF_DEVICE),
+)
+
+
 /** hook 单元定义：标题 + 说明 + 绑定 AppConfig 字段 */
 private class HookDef(
     val hook: String,
@@ -57,6 +78,10 @@ private fun hooksFor(scope: String): List<HookDef> = when (scope) {
             { it.hSystemImeGuard }),
         HookDef(AppConfig.H_DESKTOP_PROTECT, "桌面锁定防护", "阻止默认桌面被偷偷改回 XDF",
             { it.hSystemDesktopProtect }),
+        HookDef(AppConfig.H_USB_AUTH, "USB 授权弹窗", "插拔 UVC 摄像头等设备时，让系统授权弹窗正常弹出",
+            { it.hSystemUsbAuth }),
+        HookDef(AppConfig.H_USB_AUTH_DIAG, "USB 授权诊断日志", "记录 USB 授权请求来源，便于排查不弹窗问题",
+            { it.hSystemUsbDiag }),
     )
     AppConfig.SCOPE_ANDROID -> listOf(
         HookDef(AppConfig.H_SHARE_CHOOSER, "分享面板修复", "恢复分享面板的\"仅此一次\"与点击响应",
@@ -101,6 +126,10 @@ private sealed class Param {
     object ImeList : Param()
     object ZeusModel : Param()
     object ZeusSn : Param()
+    object QsColumns : Param()
+    object QsMaxRows : Param()
+    object QsFooterFg : Param()
+    object QsTileText : Param()
 }
 
 /** 单个 scope 的详情页：该 scope 上可用的全部功能开关 + 参数 */
@@ -139,7 +168,12 @@ fun ScopeDetailScreen(
     }
 
     fun setHook(hook: String, checked: Boolean) {
-        save { AppConfig.setBoolean(AppConfig.hookKey(scope, hook), checked) }
+        val key = AppConfig.hookKey(scope, hook)
+        val ok = save { AppConfig.setBoolean(key, checked) }
+        if (ok && checked && key !in NEEDS_RESTART_ON_ENABLE) {
+            Toast.makeText(context, R.string.hook_need_restart,
+                Toast.LENGTH_LONG).show()
+        }
     }
 
     LazyColumn(
@@ -273,6 +307,37 @@ fun ScopeDetailScreen(
                 )
             }
         }
+        if (scope == AppConfig.SCOPE_SYSTEMUI && cfg.hSystemuiQsFix) {
+            item { SmallTitle(text = "控制中心排版参数") }
+            item {
+                ArrowPreference(
+                    title = "按钮列数",
+                    summary = "当前 ${cfg.qsColumns} 列（可选 1–6）",
+                    onClick = { param = Param.QsColumns },
+                )
+            }
+            item {
+                ArrowPreference(
+                    title = "最大行数",
+                    summary = "当前 ${cfg.qsMaxRows} 行（可选 1–3）",
+                    onClick = { param = Param.QsMaxRows },
+                )
+            }
+            item {
+                ArrowPreference(
+                    title = "底栏按钮颜色",
+                    summary = colorSummary("底栏铅笔/齿轮", cfg.qsFooterFg),
+                    onClick = { param = Param.QsFooterFg },
+                )
+            }
+            item {
+                ArrowPreference(
+                    title = "编辑页按钮文字颜色",
+                    summary = colorSummary("编辑页文字", cfg.qsTileTextDark),
+                    onClick = { param = Param.QsTileText },
+                )
+            }
+        }
         item {
             Text(
                 text = "某些功能改动需要重新打开目标应用后生效。",
@@ -320,6 +385,48 @@ fun ScopeDetailScreen(
                 if (save { AppConfig.setString(AppConfig.K_ZEUS_SN, v.trim()) }) {
                     Toast.makeText(context, "序列号已保存", Toast.LENGTH_SHORT).show()
                 }
+            },
+            onCancel = { param = null },
+        )
+        is Param.QsColumns -> NumberPickDialog(
+            title = "按钮列数",
+            values = (1..6).toList(),
+            current = cfg.qsColumns,
+            extra = "列数决定每个按钮的宽度，过多会让按钮难以点击。",
+            onPick = { v ->
+                param = null
+                save { AppConfig.setInt(AppConfig.K_QS_COLUMNS, v) }
+            },
+            onCancel = { param = null },
+        )
+        is Param.QsMaxRows -> NumberPickDialog(
+            title = "最大行数",
+            values = (1..3).toList(),
+            current = cfg.qsMaxRows,
+            extra = "行数决定面板高度，行数过多可能挤占通知区域。",
+            onPick = { v ->
+                param = null
+                save { AppConfig.setInt(AppConfig.K_QS_MAX_ROWS, v) }
+            },
+            onCancel = { param = null },
+        )
+        is Param.QsFooterFg -> ColorPickDialog(
+            title = "底栏按钮颜色",
+            current = cfg.qsFooterFg,
+            extra = "底栏的铅笔、齿轮与版本号文字。深色背景建议选浅色。",
+            onPick = { v ->
+                param = null
+                save { AppConfig.setInt(AppConfig.K_QS_FOOTER_FG, v) }
+            },
+            onCancel = { param = null },
+        )
+        is Param.QsTileText -> ColorPickDialog(
+            title = "编辑页按钮文字颜色",
+            current = cfg.qsTileTextDark,
+            extra = "编辑页（长按齿轮进入）里各按钮的名称文字。",
+            onPick = { v ->
+                param = null
+                save { AppConfig.setInt(AppConfig.K_QS_TILE_TEXT_DARK, v) }
             },
             onCancel = { param = null },
         )
@@ -466,6 +573,144 @@ private fun TextInputDialog(
         confirmButton = {
             TextButton(onClick = { onOk(value) }) { Text(stringResource(android.R.string.ok)) }
         },
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text(stringResource(android.R.string.cancel)) }
+        },
+    )
+}
+/* ---------------- QS 排版参数对话框 ---------------- */
+
+/** 颜色摘要文案 */
+private fun colorSummary(what: String, argb: Int): String {
+    val a = (argb ushr 24) and 0xFF
+    val hex = String.format("#%06X", argb and 0xFFFFFF)
+    val alpha = if (a == 0xFF) "不透明" else "透明度 ${(a * 100 / 255)}%"
+    return "$what：$hex（$alpha）"
+}
+
+/**
+ * 数字选择对话框（列数/行数）。
+ *
+ * values 已经过取值域约束（1–6 / 1–3），且 current 若不在列表内会被拉回，
+ * 所以这里不存在把非法值写进配置的可能。
+ */
+@Composable
+private fun NumberPickDialog(
+    title: String,
+    values: List<Int>,
+    current: Int,
+    extra: String,
+    onPick: (Int) -> Unit,
+    onCancel: () -> Unit,
+) {
+    // current 兜底：不在候选内则取最接近的合法值
+    val safeCurrent = if (current in values) current else values.first()
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(title) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    text = extra,
+                    fontSize = 12.sp,
+                    color = Color(0xFF8A8A8E),
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                values.forEach { v ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .toggleable(
+                                value = v == safeCurrent,
+                                onValueChange = { if (it) onPick(v) },
+                            )
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = v == safeCurrent, onCheckedChange = null)
+                        Text(
+                            text = "$v${if (v == safeCurrent) "（当前）" else ""}",
+                            fontSize = 15.sp,
+                            modifier = Modifier.padding(start = 8.dp),
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onCancel) { Text(stringResource(android.R.string.cancel)) }
+        },
+    )
+}
+
+/**
+ * 颜色选择对话框：从一组安全预设色里挑。
+ *
+ * 不做自由取色器：只提供经过对比度考量的常用色，避免用户选出
+ * 与背景同色导致"按钮看不见"这类难排查的问题。
+ */
+@Composable
+private fun ColorPickDialog(
+    title: String,
+    current: Int,
+    extra: String,
+    onPick: (Int) -> Unit,
+    onCancel: () -> Unit,
+) {
+    val presets = listOf(
+        "纯白" to 0xFFFFFFFF.toInt(),
+        "浅灰" to 0xFFE0E0E0.toInt(),
+        "深灰黑" to 0xFF212121.toInt(),
+        "纯黑" to 0xFF000000.toInt(),
+        "蓝灰" to 0xFF9E9E9E.toInt(),
+        "品牌蓝" to 0xFF3482FF.toInt(),
+        "半透明白" to 0x99FFFFFF.toInt(),
+    )
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(title) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    text = extra,
+                    fontSize = 12.sp,
+                    color = Color(0xFF8A8A8E),
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+                presets.forEach { (name, v) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onPick(v) }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        // 色块
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .background(
+                                    Color(v),
+                                    androidx.compose.foundation.shape.RoundedCornerShape(6.dp),
+                                ),
+                        )
+                        Column(modifier = Modifier.padding(start = 10.dp)) {
+                            Text(
+                                text = name + (if (v == current) "（当前）" else ""),
+                                fontSize = 14.sp,
+                            )
+                            Text(
+                                text = String.format("#%08X", v),
+                                fontSize = 11.sp,
+                                color = Color(0xFF8A8A8E),
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
         dismissButton = {
             TextButton(onClick = onCancel) { Text(stringResource(android.R.string.cancel)) }
         },

@@ -17,8 +17,14 @@ public class XdfApp extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        // ★ 必须最先调用：UI 进程未被 hook，拿不到 api-102 的 XposedInterface，
+        //   FileLogger 一旦碰它就抛 NoClassDefFoundError 并吞掉整条日志。
+        //   此标记让 FileLogger 在 UI 进程只走 logcat。
+        FileLogger.markUiProcess();
         DebugProbe.setProcessName("app-ui");
         DebugProbe.setAppDir(getFilesDir());
+        // UI 私有配置文件（不需要 root）：remote 通道不可用时的可靠兜底落地点
+        AppConfig.setUiFileDir(getFilesDir());
         DebugProbe.log("XdfApp.onCreate");
         try {
             XposedServiceHelper.registerListener(

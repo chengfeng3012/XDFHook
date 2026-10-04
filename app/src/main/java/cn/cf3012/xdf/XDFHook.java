@@ -24,6 +24,9 @@ import java.util.Set;
  *   system_server          → ZeusUnlocker（A 组 framework/services 管控放行
  *                                            + C 组 ChooserActivity UI 修复）
  *                            + HomeUnlocker（PMS preferred 写入只读诊断）
+ *                            + InputMethodHooks（输入法固化/黑名单）
+ *                            + UsbAuthHooks（USB 授权弹窗：A10 UVC/CAMERA 误判修正
+ *                                            + 后台启动拦截放行 + 强制置顶）
  *   cn.xdf.zeus            → ZeusUnlocker（B 组检查链/云控/序列号短路）
  *   com.android.settings   → LockScreenHooks（锁屏方式恢复：原生 security_settings_picker
  *                                         + 拦截 XDF 逐项摘除 + 左栏锁屏页注入「屏幕锁定」）
@@ -32,8 +35,9 @@ import java.util.Set;
  *   com.android.gallery3d  → GalleryHooks（相册"编辑"按钮恢复）
  *   com.android.launcher3  → LauncherHooks（最近任务隐藏列表解除）
  *                            + HomeUnlocker（block setXdfDefaultHomeLauncher）
- *   其余 scope 内进程      → SystemHooks（ResolverActivity"仅此一次"按钮
- *                                            + ChooserActivity 占位目标兜底）
+ *   android:ui            → SystemHooks → ResolverAlwaysRestore（「仅此一次」/「始终」
+ *                                            按钮与 startSelected 分派恢复）
+ *                            + ChooserClickRestore（ChooserActivity 图标点击监听）
  *
  * 日志：logcat + /data/local/tmp/XDFHook.log 双写（FileLogger，五级 V/D/I/W/E，
  * 开机超 5MiB 自动清空，权限说明与 magiskpolicy 兜底命令见 FileLogger 头注释）。
@@ -199,6 +203,16 @@ public class XDFHook extends XposedModule {
             }
         } else {
             logi(TAG, "ime guard disabled, skip");
+        }
+        // USB 授权弹窗修复（A10 UVC/CAMERA 误判 + 后台启动拦截放行）
+        if (cfg.hSystemUsbAuth) {
+            try {
+                UsbAuthHooks.hookAll(param.getClassLoader(), cfg.hSystemUsbDiag);
+            } catch (Throwable t) {
+                loge(t, TAG, "UsbAuthHooks.systemServer");
+            }
+        } else {
+            logi(TAG, "usb auth fix disabled, skip");
         }
     }
 

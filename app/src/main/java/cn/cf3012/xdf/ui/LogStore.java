@@ -35,7 +35,8 @@ public final class LogStore {
     public static List<LogParser.Line> load() {
         String out = null;
         try {
-            out = Root.get(CMD);
+            // 2000 行 logcat 走 su 可能偏慢，给 8s（旧的 3s 会中途超时丢日志）
+            out = Root.get(CMD, 8);
         } catch (Throwable ignored) {
         }
         if (out == null || out.isEmpty()) {

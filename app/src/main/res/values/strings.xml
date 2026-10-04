@@ -31,6 +31,9 @@
     <string name="op_act_orientation">固定屏幕朝向</string>
     <string name="op_act_orientation_short">朝向</string>
     <string name="op_act_ime">切换输入法</string>
+    <string name="op_ime_pick_title">选择输入法</string>
+    <string name="op_ime_pick_loading">正在读取已启用的输入法…</string>
+    <string name="op_ime_pick_empty">未找到已启用的输入法\n\n请到「系统设置 → 语言和输入法」先启用至少一个。</string>
     <string name="op_act_ime_short">输入法</string>
     <string name="op_act_desktop">切换桌面</string>
     <string name="op_act_desktop_short">桌面</string>
@@ -73,6 +76,9 @@
     <string name="env_service_ok">服务已连接（Android %s）</string>
     <string name="env_service_off">未连接：请在 LSPosed 中启用本模块</string>
     <string name="env_no_read">无法读取日志</string>
+    <string name="hook_need_restart">开关已保存，需重启对应进程后生效
+
+关闭再打开不影响已重启的进程；已开启状态下修改部分参数即时生效。</string>
     <string name="env_no_write">无法保存设置\n\n多为 LSPosed 服务未连接（更新模块后常见）。请完全退出应用再重新打开。</string>
 
     <string name="section_module">模块</string>

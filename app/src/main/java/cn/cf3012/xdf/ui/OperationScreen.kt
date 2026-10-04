@@ -72,7 +72,6 @@ private const val CMD_NAV =
         "cmd overlay enable com.android.internal.systemui.navbar.gestural; fi"
 private const val CMD_REFRESH_MEDIA =
     "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/"
-private const val CMD_IME = "am start -a android.settings.INPUT_METHOD_SETTINGS"
 private const val CMD_DESKTOP = "am start -a android.settings.HOME_SETTINGS"
 private fun cmdOrient(deg: Int) =
     "settings put system accelerometer_rotation 0; settings put system user_rotation $deg"
@@ -98,6 +97,7 @@ private class FuncAction(
     val getCmd: String? = null,
     val onValue: String? = null,
     val orientationMenu: Boolean = false,
+    val imeMenu: Boolean = false,
 )
 
 private val FUNC_ACTIONS = listOf(
@@ -109,7 +109,7 @@ private val FUNC_ACTIONS = listOf(
         R.string.op_btn_light, R.string.op_btn_deep, GT_UI, "2"),
     FuncAction(R.string.op_act_nav, 0, 0xFFFF8A00, CMD_NAV, T_NAV,
         R.string.op_btn_three, R.string.op_btn_gesture, GT_NAV, "2"),
-    FuncAction(R.string.op_act_ime, R.string.op_act_ime_short, 0xFF34C759, CMD_IME),
+    FuncAction(R.string.op_act_ime, R.string.op_act_ime_short, 0xFF34C759, imeMenu = true),
     FuncAction(R.string.op_act_desktop, R.string.op_act_desktop_short, 0xFFFF6482, CMD_DESKTOP),
     FuncAction(R.string.op_act_media, R.string.op_act_media_short, 0xFFFFC42E, CMD_REFRESH_MEDIA),
 )
@@ -125,6 +125,9 @@ private val DANGER_ACTIONS = listOf(
     DangerAction(R.string.op_act_sysui, R.string.op_act_sysui_short, 0xFFFF6482,
         R.string.op_confirm_sysui_title, R.string.op_confirm_sysui_msg, CMD_KILL_SYSUI),
 )
+
+/** 已启用的一个输入法：id = 包名/输入法子串（ime set 直接可用） */
+private data class ImeItem(val id: String, val current: Boolean)
 
 /* ---------------- root 状态缓存（进程内） ---------------- */
 
@@ -167,6 +170,11 @@ fun OperationScreen(tick: Int, context: Context) {
     val probing = RootState.probing
     var toggleLabels by remember { mutableStateOf<Map<Int, Int>>(emptyMap()) }
     var showOrient by remember { mutableStateOf(false) }
+
+    // ---- 输入法自选（2026-10）：读已启用的 IME 列表 → 单选 → ime set ----
+    var imeDialog by remember { mutableStateOf(false) }
+    var imeLoading by remember { mutableStateOf(false) }
+    var imeItems by remember { mutableStateOf<List<ImeItem>>(emptyList()) }
     var showSilent by remember { mutableStateOf(false) }
     var dangerTarget by remember { mutableStateOf<DangerAction?>(null) }
     var apkPath by remember { mutableStateOf("") }
@@ -198,6 +206,47 @@ fun OperationScreen(tick: Int, context: Context) {
             labels[a.title] = if (v == a.onValue) a.labelOff else a.labelOn
         }
         toggleLabels = labels
+    }
+
+    /**
+     * 读取系统已启用的输入法列表（2026-10 新增）。
+     *
+     * <p>数据源用 `ime list -s`（输出每行一个 `包名/输入法子串`，正是
+     * `ime set` 需要的完整 id），比解析 `settings get secure
+     * enabled_input_methods` 少一层转义。</p>
+     *
+     * <p>同时标出当前默认输入法（`ime list -s -a` 会带 `*`/前导标记），
+     * 让用户能一眼看出自己在用哪个。</p>
+     */
+    fun loadImeList() {
+        imeDialog = true
+        imeLoading = true
+        imeItems = emptyList()
+        Thread {
+            val raw = try {
+                Root.get("ime list -s", 8)
+            } catch (t: Throwable) {
+                ""
+            }
+            // 当前默认输入法：ime list -s 的输出里，mCurMethodId 可从
+            // `dumpsys input_method | grep mCurMethodId` 取，取不到就留空
+            val cur = try {
+                Root.get("dumpsys input_method | grep -m1 mCurMethodId", 8)
+                    .substringAfter('=', "").trim()
+            } catch (t: Throwable) {
+                ""
+            }
+            val parsed = raw.lineSequence()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && it.contains('/') && !it.startsWith("#") }
+                .distinct()
+                .map { ImeItem(id = it, current = (cur.isNotEmpty() && it == cur)) }
+                .toList()
+            android.os.Handler(android.os.Looper.getMainLooper()).post {
+                imeItems = parsed
+                imeLoading = false
+            }
+        }.start()
     }
 
     fun runCommand(cmd: String, done: (() -> Unit)? = null) {
@@ -283,6 +332,7 @@ fun OperationScreen(tick: Int, context: Context) {
                                     onClick = {
                                         when {
                                             a.orientationMenu -> showOrient = true
+                                            a.imeMenu -> loadImeList()
                                             a.cmd != null -> runCommand(a.cmd) {}
                                         }
                                     },
@@ -363,6 +413,48 @@ fun OperationScreen(tick: Int, context: Context) {
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { showOrient = false }) {
+                    Text(stringResource(android.R.string.cancel))
+                }
+            },
+        )
+    }
+
+    /* ---------------- 输入法自选对话框 ---------------- */
+    if (imeDialog) {
+        AlertDialog(
+            onDismissRequest = { imeDialog = false },
+            title = { Text(stringResource(R.string.op_ime_pick_title)) },
+            text = {
+                when {
+                    imeLoading -> Text(
+                        stringResource(R.string.op_ime_pick_loading),
+                        fontSize = 15.sp,
+                    )
+                    imeItems.isEmpty() -> Text(
+                        stringResource(R.string.op_ime_pick_empty),
+                        fontSize = 15.sp,
+                    )
+                    else -> Column {
+                        imeItems.forEach { it ->
+                            Text(
+                                text = it.id + if (it.current) "  ✓" else "",
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        imeDialog = false
+                                        runCommand("ime set " + it.id) {}
+                                    }
+                                    .padding(vertical = 10.dp),
+                                fontSize = 14.sp,
+                                color = if (it.current) Color(0xFF34C759) else Color.Unspecified,
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { imeDialog = false }) {
                     Text(stringResource(android.R.string.cancel))
                 }
             },

@@ -32,18 +32,37 @@ public final class Root {
         }
     }
 
-    /** 以 root 执行并取回第一行输出（trimmed），供读取开关等当前状态。失败/超时返回空串。 */
+    /**
+     * 以 root 执行并取回<b>全部输出</b>（trimmed）。失败/超时返回空串。
+     *
+     * <p>【历史 Bug 修正】本方法原来只 {@code readLine()} 一次（返回第一行），
+     * 于是 LogStore 用它取 {@code logcat -d -t 2000} 的输出时，2000 行日志
+     * 只剩 1 行能进日志页 —— 表现就是「日志文件永远读不到实际内容」。
+     * 现改为完整 drain（并发读，避免管道缓冲写满互锁）。</p>
+     */
     public static String get(String command) {
+        return get(command, 5);
+    }
+
+    /** 同 {@link #get(String)}，但自定义超时（秒） */
+    public static String get(String command, int timeoutSec) {
         try {
             Process p = new ProcessBuilder("su", "-c", command)
                     .redirectErrorStream(true).start();
+            StringBuilder sb = new StringBuilder();
+            // 必须在 waitFor 之前 drain：否则管道缓冲写满后子进程阻塞，
+            // 双方互等直到超时。
             BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
-            String line = br.readLine();
-            if (!p.waitFor(3, TimeUnit.SECONDS)) {
+            char[] buf = new char[4096];
+            int n;
+            while ((n = br.read(buf)) > 0) {
+                sb.append(buf, 0, n);
+            }
+            if (!p.waitFor(timeoutSec, TimeUnit.SECONDS)) {
                 p.destroy();
                 return "";
             }
-            return line == null ? "" : line.trim();
+            return sb.toString().trim();
         } catch (Throwable t) {
             return "";
         }

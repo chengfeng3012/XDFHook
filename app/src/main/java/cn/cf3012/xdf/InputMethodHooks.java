@@ -1,11 +1,14 @@
 package cn.cf3012.xdf;
 
 import android.content.ContentResolver;
+import android.content.Context;
+import android.provider.Settings;
 import android.os.Binder;
-import android.os.UserHandle;
+import android.os.SystemClock;
 
 import io.github.libxposed.api.XposedInterface;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.HashSet;
@@ -49,8 +52,37 @@ final class InputMethodHooks {
     private static final String K_INPUT_METHOD_MODE = AppConfig.K_INPUT_METHOD_MODE;
     private static final String K_INPUT_METHOD_LIST = AppConfig.K_INPUT_METHOD_LIST;
 
+    /**
+     * 固化模式。
+     *
+     * <p><b>★ 新机高危（2026-10 用户反馈后修正）</b>：原实现是「无条件拦住
+     * 4 个 IME 键的一切写入」，包括系统自己在输入法页做 enable/disable
+     * （写 {@code enabled_input_methods}）与切换默认输入法
+     * （写 {@code default_input_method}）。新机出厂只有系统默认 3 个输入法时，
+     * 用户进输入法页想开关任何一个都会被吞 —— 系统 UI 以为写成功、
+     * 实际没写，界面卡在旧状态；更糟的是若被拦的正好是让当前 IME 重新
+     * enabled 的那次写入，<b>输入法就再也弹不出来了</b>。</p>
+     *
+     * <p>现语义：固化 = 只拦「把默认输入法改成别的」与「关掉系统自带 IME」，
+     * 但<b>放行</b>：① 系统/设置页对 {@code enabled_input_methods} 的正常增删；
+     * ② 对当前默认输入法的重复设置（同值）；
+     * ③ 任何来自模块自身 App 的写入（便于本模块恢复现场）。
+     * 这样既防住了 zeus 之类偷偷改默认输入法，又不会出现「IME 弹不出来」。</p>
+     */
     private static final int MODE_LOCK = 0;
     private static final int MODE_BLACKLIST = 1;
+
+    /** 系统出厂自带的 IME 白名单前缀：这些组件永不进入黑名单判定 */
+    private static final String[] SYSTEM_IME_PREFIXES = {
+            "com.android.inputmethod.latin",
+            "com.android.inputmethod.latin/.LatinIME",
+            "com.android.inputmethod",
+            "com.google.android.inputmethod",
+            "com.android.inputmethod.pinyin",
+    };
+
+    /** system_server 的 ClassLoader（读 IMMS 静态 getInstance 用） */
+    private static volatile ClassLoader sSystemServerCl;
 
     private InputMethodHooks() {
     }
@@ -59,6 +91,7 @@ final class InputMethodHooks {
      * 在 system_server 进程中安装 hook。
      */
     static void hookSystemServer(ClassLoader cl) throws Exception {
+        sSystemServerCl = cl;
         AppConfig cfg = AppConfig.get();
         if (!cfg.hookEnabled(AppConfig.SCOPE_SYSTEM, AppConfig.H_IME_GUARD)) {
             XDFHook.logi(TAG, "input method hooks disabled");
@@ -178,6 +211,11 @@ final class InputMethodHooks {
                             int mode = cfg.getInt(K_INPUT_METHOD_MODE, MODE_LOCK);
                             String imeId = extractImeId(chain, methodName);
                             if (mode == MODE_LOCK) {
+                                // ★ 安全固化：只拦「切到别的输入法」，
+                                // 放行「切回自己」（否则 IME 弹不出来无法自愈）
+                                if (imeId == null || imeId.equals(currentInputMethodId())) {
+                                    return chain.proceed();
+                                }
                                 XDFHook.logw(TAG, "BLOCKED IMMS." + methodName
                                         + " id=" + imeId + " (lock mode)");
                                 return null; // void 方法，不 proceed = 不执行
@@ -281,9 +319,23 @@ final class InputMethodHooks {
                 + " mode=" + mode + " caller=" + caller + " -> evaluating");
 
         if (mode == MODE_LOCK) {
-            // 固化模式：阻止任何更改（除模块自身外）
-            // 我们可以通过调用者判断是否是模块自身（但模块不会调用 putString）
-            // 简单策略：全部阻止
+            // ★ 安全固化（详见 MODE_LOCK 注释）：
+            //   - enabled_input_methods：系统输入法页正常增删 IME 时会写这个键，
+            //     全拦会让新机（仅 3 个系统输入法）无法开关输入法，
+            //     拦到关键写入还会导致 IME 直接弹不出来 → 放行。
+            //   - default/selected_input_method：值为「当前已生效的 IME」时放行
+            //     （同值重写是无害的，且是 IME 自愈的必要路径）。
+            //   - 其余（真正要改掉输入法）才拦。
+            if (KEY_ENABLED_INPUT_METHODS.equalsIgnoreCase(key)) {
+                XDFHook.logd(TAG, "allow (lock mode passthrough) enabled_input_methods"
+                        + " caller=" + caller + " value=" + value);
+                return chain.proceed();
+            }
+            if (value.equals(currentInputMethodId())) {
+                XDFHook.logd(TAG, "allow (same value) " + table + ".putString key=" + key
+                        + " caller=" + caller);
+                return chain.proceed();
+            }
             XDFHook.logw(TAG, "BLOCKED (lock mode) " + table + ".putString key=" + key
                     + " value=" + value + " caller=" + caller);
             return Boolean.FALSE; // putString 返回 boolean
@@ -300,6 +352,106 @@ final class InputMethodHooks {
 
         // 放行
         return chain.proceed();
+    }
+
+    /**
+     * 读当前生效的默认输入法（cached 1s，避免 Settings 读取放大）。
+     *
+     * <p>固化模式判定必需：只有知道「当前是什么」才能区分
+     * 「换输入法（要拦）」和「重写同一个输入法（放行）」。</p>
+     */
+    private static volatile String sCurIme;
+    private static volatile long sCurImeAt;
+
+    /** IMMS 实例缓存（system_server 里读 mCurMethodId / Settings 都靠它） */
+    private static volatile Object sImms;
+
+    /**
+     * 读当前生效的默认输入法组件名（1s 缓存）。
+     *
+     * <p>固化模式判定必需：只有知道「当前是什么」才能区分
+     * 「换输入法（要拦）」与「重写同一个输入法（放行）」。</p>
+     *
+     * <p>取值顺序：① IMMS.mCurMethodId（内存真值，最快最准）
+     * ② IMMS 的 Context 读 Secure.default_input_method；
+     * 任一路径读不到就沿用上一次缓存 —— <b>读不到时必须放行</b>，
+     * 宁可漏拦也不能把 IME 锁死。</p>
+     */
+    private static String currentInputMethodId() {
+        long now = SystemClock.elapsedRealtime();
+        String cached = sCurIme;
+        if (cached != null && now - sCurImeAt < 1000L) {
+            return cached;
+        }
+        String v = null;
+        try {
+            Object imms = sImms;
+            if (imms == null) {
+                for (String cn : new String[]{
+                        "com.android.server.inputmethod.InputMethodManagerService",
+                        "com.mediatek.server.inputmethod.InputMethodManagerService"}) {
+                    try {
+                        Class<?> k = Class.forName(cn, false, sSystemServerCl);
+                        Object inst = k.getMethod("getInstance").invoke(null);
+                        if (inst != null) {
+                            imms = inst;
+                            sImms = inst;
+                            break;
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                }
+            }
+            if (imms != null) {
+                // ① 内存真值
+                for (String f : new String[]{"mCurMethodId", "mCurClient"}) {
+                    try {
+                        Field fd = findFieldQuietly(imms.getClass(), f);
+                        if (fd == null) {
+                            continue;
+                        }
+                        Object o = fd.get(imms);
+                        if (o instanceof String && ((String) o).indexOf('/') > 0) {
+                            v = (String) o;
+                            break;
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                }
+                // ② 兜底：Secure 键
+                if (v == null) {
+                    Object ctx = findFieldQuietly(imms.getClass(), "mContext") != null
+                            ? findFieldQuietly(imms.getClass(), "mContext").get(imms) : null;
+                    if (ctx instanceof Context) {
+                        v = Settings.Secure.getString(((Context) ctx).getContentResolver(),
+                            KEY_DEFAULT_INPUT_METHOD);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        if (v == null || v.isEmpty()) {
+            return cached; // 读不到 → 沿用上次；仍为空则调用方按「放行」处理
+        }
+        sCurIme = v;
+        sCurImeAt = now;
+        return v;
+    }
+
+    private static Field findFieldQuietly(Class<?> cls, String name) {
+        Class<?> c = cls;
+        while (c != null) {
+            try {
+                Field f = c.getDeclaredField(name);
+                f.setAccessible(true);
+                return f;
+            } catch (NoSuchFieldException e) {
+                c = c.getSuperclass();
+            } catch (Throwable t) {
+                return null;
+            }
+        }
+        return null;
     }
 
     /**
@@ -329,7 +481,17 @@ final class InputMethodHooks {
         }
 
         // 单个组件
-        return blocked.contains(value);
+        if (blocked.contains(value)) {
+            // ★ 系统自带 IME 不拦：若它是设备上唯一的输入法，拦掉等于
+            //   让设备彻底没有输入法可用（新机出厂状态）。
+            for (String p : SYSTEM_IME_PREFIXES) {
+                if (value.startsWith(p)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;
     }
 
     /**

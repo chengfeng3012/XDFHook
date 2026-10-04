@@ -60,12 +60,12 @@ fun OverviewScreen(tick: Int, context: Context) {
 private val SCOPE_ORDER = listOf(
     AppConfig.SCOPE_SYSTEM,
     AppConfig.SCOPE_ANDROID,
+    AppConfig.SCOPE_SYSTEMUI,
     AppConfig.SCOPE_ZEUS,
     AppConfig.SCOPE_SETTINGS,
     AppConfig.SCOPE_LAUNCHER,
     AppConfig.SCOPE_GALLERY,
     AppConfig.SCOPE_PACKAGE_INSTALLER,
-    AppConfig.SCOPE_SYSTEMUI,
 )
 
 @Composable
@@ -243,7 +243,7 @@ internal fun scopeName(scope: String): String = when (scope) {
     AppConfig.SCOPE_LAUNCHER -> "桌面"
     AppConfig.SCOPE_GALLERY -> "相册"
     AppConfig.SCOPE_PACKAGE_INSTALLER -> "应用安装器"
-    AppConfig.SCOPE_SYSTEMUI -> "控制中心"
+    AppConfig.SCOPE_SYSTEMUI -> "系统UI"
     else -> scope
 }
 

@@ -1,7 +1,8 @@
 system
+android
+com.android.systemui
 cn.xdf.zeus
 com.android.settings
 com.android.launcher3
 com.android.gallery3d
-com.android.systemui
 com.android.packageinstaller

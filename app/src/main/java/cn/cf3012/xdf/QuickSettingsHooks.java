@@ -114,14 +114,68 @@ final class QuickSettingsHooks {
     private static final String CLS_CUSTOMIZER = "com.android.systemui.qs.customize.QSCustomizer";
     /* ==================== 行为参数 ==================== */
 
-    /** 目标列数 */
-    private static final int COLUMNS = 5;
-    /** 目标最大行数 */
-    private static final int MAX_ROWS = 2;
-    /** footer 前景目标色：纯白（铅笔 / 齿轮 / Build 版本号） */
-    private static final int FOOTER_FOREGROUND_COLOR = 0xFFFFFFFF;
-    /** 编辑页 tile 名称目标色：深灰黑（原为硬编码纯白） */
-    private static final int TILE_TEXT_DARK = 0xFF212121;
+    /* 行为参数全部来自 AppConfig（可在 App UI 中调整），不再硬编码常量。
+     * 取值时统一走 clamp* —— SystemUI 里 mColumns/mMaxAllowedRows 直接进
+     * TileLayout.onMeasure 的除法（mCellWidth = (宽-边距-列数*marginH)/列数），
+     * 列数=0 会除零、列数过大格子宽度掉到 0 都会让布局崩/卡死 SystemUI，
+     * 所以 UI 写入与此处读取两端都做钳制。 */
+
+    /** 目标列数（AppConfig.clampQsColumns 保证 1..6） */
+    private static volatile int sColumns = 5;
+    /** 目标最大行数（AppConfig.clampQsMaxRows 保证 1..3） */
+    private static volatile int sMaxRows = 2;
+    /** footer 前景目标色：ARGB */
+    private static volatile int sFooterFg = 0xFFFFFFFF;
+    /** 编辑页 tile 名称目标色：ARGB */
+    private static volatile int sTileTextDark = 0xFF212121;
+
+    /**
+     * QS 参数热刷新监听（2026-10 新增，静态强引用）。
+     *
+     * <p><b>要解决的坑</b>：本类把配置一次性拷进上面的静态字段
+     * （{@code loadParams()}），而 {@code loadParams()} 只在 {@code hookAll()} —
+     * 即进程启动的 {@code onPackageReady} — 调一次。于是配置虽然被 daemon 推送到了
+     * 这个进程，却没人去读那些静态字段 → 用户改列数/行数完全没反应，必须重启 SystemUI。</p>
+     *
+     * <p><b>修复</b>：订阅这 4 个键，收到变更就重跑 {@code loadParams()}。
+     * {@code hookTileLayout} 的 after hook 本就每次调用都会重读 {@code sColumns}/
+     * {@code sMaxRows} 并回填字段（自愈），所以这里只需刷新数据源，
+     * 等下一次系统自身的 layout 流程触发 {@code updateResources()} 即可生效。</p>
+     *
+     * <p><b>为什么不用热重载</b>：remote prefs 的 {@code getXxx} 只是
+     * {@code HashMap.getOrDefault}（纯内存，无 binder/无 IO），一次 26 个键的
+     * 哈希查找在 MT8788 上是微秒级；热重载却要重载模块 dex + 重跑
+     * {@code onPackageReady} + 重装全部 hook，成本高几个数量级，且 system_server
+     * 完全不支持。为这点开销去重载不划算。</p>
+     *
+     * <p><b>为什么必须 static 强引用</b>：历史教训 —— 曾出现「hook 启动有效、
+     * 久后失效」，根因是 lambda/匿名实例被 GC 后 native 回调丢失，而 PROTECTIVE
+     * 模式把异常静默吞掉，无从排查。故 listener 与所有 hooker 一律 static final 持有。</p>
+     */
+    private static final AppConfig.ConfigListener QS_PARAM_LISTENER =
+            new AppConfig.ConfigListener() {
+                @Override
+                public void onConfigChanged(String key) {
+                    try {
+                        int before = sColumns;
+                        loadParams();
+                        XDFHook.logi(TAG, "qs params hot-reloaded on '" + key
+                                + "': columns " + before + " -> " + sColumns
+                                + ", maxRows=" + sMaxRows);
+                    } catch (Throwable t) {
+                        XDFHook.logw(TAG, "qs param reload failed: " + t);
+                    }
+                }
+            };
+
+    /** 各 hook 内部统一读这两个（避免读半新半旧的组合） */
+    private static int columns() {
+        return sColumns;
+    }
+
+    private static int maxRows() {
+        return sMaxRows;
+    }
 
     /* ==================== 内部状态 ==================== */
 
@@ -138,9 +192,20 @@ final class QuickSettingsHooks {
     }
 
     static void hookAll(ClassLoader cl) {
+        // ★ 订阅 QS 参数变更（202-10）：本类把配置拷进静态字段（loadParams），
+        //   若只在进程启动时调一次，配置推送到了却没人刷新 → 改了列数/行数没反应。
+        //   收到这 4 个键变更就重新 loadParams()，配合 hookTileLayout 的 after hook
+        //   自愈字段，无需重启 SystemUI。
+        AppConfig.addConfigListener(QS_PARAM_LISTENER,
+                AppConfig.K_QS_COLUMNS,
+                AppConfig.K_QS_MAX_ROWS,
+                AppConfig.K_QS_FOOTER_FG,
+                AppConfig.K_QS_TILE_TEXT_DARK);
+
         if (!sHooked.add(cl)) {
             return;
         }
+        loadParams();
         guard("qsExpansionEnabled", () -> hookQsExpansionEnabled(cl));
         guard("tileLayoutColumns", () -> hookTileLayout(cl));
         guard("pagingRebuild", () -> hookPagingRebuild(cl));
@@ -148,6 +213,40 @@ final class QuickSettingsHooks {
         guard("footerForeground", () -> hookFooterStylingAndForeground(cl));
         guard("customizerColumnsAndTileText", () -> hookCustomizer(cl));
         XDFHook.logi(TAG, "all hooks installed");
+    }
+
+    /**
+     * 从 AppConfig 载入可配置参数。
+     *
+     * <p>两端都做钳制：AppConfig 读取时用 clampQsColumns/clampQsMaxRows，
+     * 这里再加一道 —— 因为 QS 布局参数一旦越界（列数进 TileLayout.onMeasure 的
+     * 除法、行数进 distributeTiles 的分页判定）会让 SystemUI 布局崩甚至卡死，
+     * 这类值宁可退回默认也不能带病注入。</p>
+     */
+    private static void loadParams() {
+        int cols = 5, rows = 2, fg = 0xFFFFFFFF, tx = 0xFF212121;
+        try {
+            AppConfig cfg = AppConfig.refresh();
+            cols = cfg.qsColumns;
+            rows = cfg.qsMaxRows;
+            fg = cfg.qsFooterFg;
+            tx = cfg.qsTileTextDark;
+        } catch (Throwable t) {
+            XDFHook.logw(TAG, "cfg load failed, fallback default: " + t);
+        }
+        // 防御式钳制：与 AppConfig 的取值域保持一致
+        if (cols < 1 || cols > 6) cols = 5;
+        if (rows < 1 || rows > 3) rows = 2;
+        sColumns = cols;
+        sMaxRows = rows;
+        sFooterFg = fg;
+        sTileTextDark = tx;
+        XDFHook.logi(TAG, "params: columns=" + cols + " maxRows=" + rows
+                + " footerFg=" + hex(fg) + " tileText=" + hex(tx));
+    }
+
+    private static String hex(int c) {
+        return String.format("#%08X", c);
     }
 
     private interface HookStep {
@@ -190,12 +289,12 @@ final class QuickSettingsHooks {
             Object self = chain.getThisObject();
             try {
                 boolean changed = false;
-                if (getInt(self, "mColumns", tileLayout) != COLUMNS) {
-                    setInt(self, "mColumns", COLUMNS, tileLayout);
+                if (getInt(self, "mColumns", tileLayout) != columns()) {
+                    setInt(self, "mColumns", columns(), tileLayout);
                     changed = true;
                 }
-                if (getInt(self, "mMaxAllowedRows", tileLayout) != MAX_ROWS) {
-                    setInt(self, "mMaxAllowedRows", MAX_ROWS, tileLayout);
+                if (getInt(self, "mMaxAllowedRows", tileLayout) != maxRows()) {
+                    setInt(self, "mMaxAllowedRows", maxRows(), tileLayout);
                     changed = true;
                 }
                 if (changed && self instanceof View) {
@@ -333,13 +432,13 @@ final class QuickSettingsHooks {
                 try {
                     ImageView iv = (ImageView) c;
                     iv.setColorFilter(null);
-                    iv.setImageTintList(ColorStateList.valueOf(FOOTER_FOREGROUND_COLOR));
+                    iv.setImageTintList(ColorStateList.valueOf(sFooterFg));
                     n++;
                 } catch (Throwable ignored) {
                 }
             } else if (c instanceof TextView) {
                 try {
-                    ((TextView) c).setTextColor(FOOTER_FOREGROUND_COLOR);
+                    ((TextView) c).setTextColor(sFooterFg);
                     n++;
                 } catch (Throwable ignored) {
                 }
@@ -404,17 +503,17 @@ final class QuickSettingsHooks {
                 }
             } catch (Throwable ignored) {
             }
-            if (getInt(lm, "mSpanCount", lmCls) != COLUMNS) {
-                setInt(lm, "mSpanCount", COLUMNS, lmCls);
+            if (getInt(lm, "mSpanCount", lmCls) != columns()) {
+                setInt(lm, "mSpanCount", columns(), lmCls);
                 ((View) rv).requestLayout();
-                XDFHook.logd(TAG, "customizer spanCount -> " + COLUMNS);
+                XDFHook.logd(TAG, "customizer spanCount -> " + columns());
             }
         } catch (Throwable t) {
             XDFHook.logw(TAG, "alignCustomizerColumns: " + t);
         }
     }
 
-    /** 编辑页 header 跨列数跟随主面板 COLUMNS（只改 header，普通 tile 仍占 1 格） */
+    /** 编辑页 header 跨列数跟随主面板配置列数（只改 header，普通 tile 仍占 1 格） */
     private static void installSpanSizeHookOn(Class<?> sslCls) {
         if (sslCls == null) {
             return;
@@ -430,7 +529,7 @@ final class QuickSettingsHooks {
             XDFHook.hook(gss, chain -> {
                 Object r = chain.proceed();
                 if (r instanceof Integer && ((Integer) r).intValue() > 1) {
-                    return COLUMNS;
+                    return columns();
                 }
                 return r;
             });
@@ -475,8 +574,8 @@ final class QuickSettingsHooks {
         try {
             if (v instanceof TextView && v.getVisibility() == View.VISIBLE) {
                 TextView tv = (TextView) v;
-                if (tv.getCurrentTextColor() != TILE_TEXT_DARK) {
-                    tv.setTextColor(TILE_TEXT_DARK);
+                if (tv.getCurrentTextColor() != sTileTextDark) {
+                    tv.setTextColor(sTileTextDark);
                 }
             }
         } catch (Throwable ignored) {
