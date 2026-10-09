@@ -28,6 +28,7 @@ import java.util.Set;
  *                            + UsbAuthHooks（USB 授权弹窗：A10 UVC/CAMERA 误判修正
  *                                            + 后台启动拦截放行 + 强制置顶）
  *                            + UsbMountHooks（OTG U盘挂载解禁：isMountDisallowed 恢复 AOSP）
+ *                            + PowerKeyHooks（电源键/自动息屏失效修复：XDF 触摸升级常亮窗口）
  *   cn.xdf.zeus            → ZeusUnlocker（B 组检查链/云控/序列号短路）
  *   com.android.settings   → LockScreenHooks（锁屏方式恢复：原生 security_settings_picker
  *                                         + 拦截 XDF 逐项摘除 + 左栏锁屏页注入「屏幕锁定」）
@@ -236,6 +237,16 @@ public class XDFHook extends XposedModule {
             }
         } else {
             logi(TAG, "usb mount fix disabled, skip");
+        }
+        // 电源键/自动息屏失效修复（XDF 触摸固件升级常亮窗口，见 PowerKeyHooks）
+        if (cfg.hSystemPowerKeyFix) {
+            try {
+                PowerKeyHooks.hookSystemServer(param.getClassLoader());
+            } catch (Throwable t) {
+                loge(t, TAG, "PowerKeyHooks.systemServer");
+            }
+        } else {
+            logi(TAG, "power key fix disabled, skip");
         }
     }
 

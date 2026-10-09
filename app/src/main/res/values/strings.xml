@@ -173,4 +173,6 @@
     <string name="update_installing">正在安装…</string>
     <string name="update_install_ok">安装完成</string>
     <string name="update_install_fail_fmt">安装失败：%1$s</string>
+    <string name="update_dismiss">知道了</string>
+    <string name="update_in_progress_hint">正在后台进行，可稍候或返回本页</string>
 </resources>

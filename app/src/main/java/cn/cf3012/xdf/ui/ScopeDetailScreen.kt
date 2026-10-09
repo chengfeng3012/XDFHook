@@ -88,6 +88,9 @@ private fun hooksFor(scope: String): List<HookDef> = when (scope) {
             { it.hSystemUsbDiag }),
         HookDef(AppConfig.H_USB_MOUNT_FIX, "U盘挂载解禁", "插 OTG U 盘可正常挂载读写（解除系统硬编码拦截）",
             { it.hSystemUsbMountFix }),
+        HookDef(AppConfig.H_POWER_KEY_FIX, "电源键/息屏修复",
+            "解除开机后一段时间内电源键与自动息屏全部失效（XDF 触摸升级常亮窗口）",
+            { it.hSystemPowerKeyFix }),
     )
     AppConfig.SCOPE_ANDROID -> listOf(
         HookDef(AppConfig.H_SHARE_CHOOSER, "分享面板修复", "恢复分享面板的\"仅此一次\"与点击响应",

@@ -196,7 +196,7 @@ fun SettingsScreen(tick: Int, context: Context) {
         }
         item {
             Text(
-                text = "配置版本：v${AppConfig.VERSION}（schema 自动迁移）",
+                text = "配置版本：v${AppConfig.VERSION}",
                 fontSize = 12.sp,
                 color = androidx.compose.ui.graphics.Color(0xFF8A8A8E),
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
@@ -217,24 +217,43 @@ fun SettingsScreen(tick: Int, context: Context) {
     }
 
     busy?.let { b ->
+        val inProgress = b is BusyState.Downloading || b is BusyState.Installing
         AlertDialog(
             onDismissRequest = {},
             title = { Text(stringResource(R.string.action_update)) },
             text = {
-                when (b) {
-                    is BusyState.Downloading -> Text(
-                        stringResource(
-                            R.string.update_downloading_fmt, b.percent,
-                        ),
-                    )
-                    is BusyState.Installing ->
-                        Text(stringResource(R.string.update_installing))
-                    is BusyState.Message -> Text(b.text)
+                Column {
+                    when (b) {
+                        is BusyState.Downloading -> Text(
+                            stringResource(
+                                R.string.update_downloading_fmt, b.percent,
+                            ),
+                        )
+                        is BusyState.Installing ->
+                            Text(stringResource(R.string.update_installing))
+                        is BusyState.Message -> Text(b.text)
+                    }
+                    // 进行中说明：按钮只是隐藏弹窗，下载/安装仍在后台继续，
+                    // 否则用户会误以为点它等于中断了任务。
+                    if (inProgress) {
+                        Text(
+                            text = stringResource(R.string.update_in_progress_hint),
+                            fontSize = 12.sp,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
                 }
             },
             confirmButton = {
                 TextButton(onClick = { busy = null }) {
-                    Text(stringResource(android.R.string.ok))
+                    // 结果通知用「知道了」；进行中不用「确定」，
+                    // 该状态按钮只是关闭弹窗、并非确认任何决策。
+                    // 「取消」用 framework 自带的 android.R.string.cancel
+                    if (inProgress) {
+                        Text(stringResource(android.R.string.cancel))
+                    } else {
+                        Text(stringResource(R.string.update_dismiss))
+                    }
                 }
             },
         )

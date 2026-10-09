@@ -84,6 +84,7 @@ public final class AppConfig {
     public static final String H_USB_MOUNT_FIX = "usbMountFix"; // USB OTG 挂载（system）
     public static final String H_UPDATER_GUARD = "updaterGuard"; // 升级中心禁自动更新（updater 进程）
     public static final String H_GESTURE_NAV = "gestureNavFix"; // 手势导航保持（systemui/settings）
+    public static final String H_POWER_KEY_FIX = "powerKeyFix"; // 电源键/自动息屏失效修复（system）
     public static final String H_SPOOF_ENV = "spoofEnv";   // 生产环境伪装（Build.TYPE/IS_USER）
 
     /** scope hook 单元的配置键名 */
@@ -176,6 +177,7 @@ public final class AppConfig {
     public boolean hSystemUsbAuth = true;        // USB 授权弹窗修复（A10 UVC/CAMERA 误判 + BAL 放行）
     public boolean hSystemUsbDiag = false;       // USB 授权诊断日志（热路径，默认关）
     public boolean hSystemUsbMountFix = true;    // OTG U盘挂载解禁（isMountDisallowed 恢复 AOSP 逻辑）
+    public boolean hSystemPowerKeyFix = true;    // 电源键/自动息屏失效修复（XDF 触摸升级常亮窗口）
     // android
     public boolean hAndroidShareChooser = true;   // 分享面板修复
     public boolean hAndroidChooserStdAction = true; // 标准 Action 过滤解除（打电话/分享/搜索等不再被劫持）
@@ -791,6 +793,7 @@ public final class AppConfig {
             c.hSystemUsbAuth = p.getBoolean(hookKey(SCOPE_SYSTEM, H_USB_AUTH), true);
             c.hSystemUsbDiag = p.getBoolean(hookKey(SCOPE_SYSTEM, H_USB_AUTH_DIAG), false);
             c.hSystemUsbMountFix = p.getBoolean(hookKey(SCOPE_SYSTEM, H_USB_MOUNT_FIX), true);
+            c.hSystemPowerKeyFix = p.getBoolean(hookKey(SCOPE_SYSTEM, H_POWER_KEY_FIX), true);
             // android
             c.hAndroidShareChooser = p.getBoolean(hookKey(SCOPE_ANDROID, H_SHARE_CHOOSER), true);
             c.hAndroidChooserStdAction = p.getBoolean(hookKey(SCOPE_ANDROID, H_CHOOSER_STD_ACTION), true);
@@ -996,6 +999,7 @@ public final class AppConfig {
             c.hSystemUsbAuth = getP(p, hookKey(SCOPE_SYSTEM, H_USB_AUTH), true);
             c.hSystemUsbDiag = getP(p, hookKey(SCOPE_SYSTEM, H_USB_AUTH_DIAG), false);
             c.hSystemUsbMountFix = getP(p, hookKey(SCOPE_SYSTEM, H_USB_MOUNT_FIX), true);
+            c.hSystemPowerKeyFix = getP(p, hookKey(SCOPE_SYSTEM, H_POWER_KEY_FIX), true);
             c.hAndroidShareChooser = getP(p, hookKey(SCOPE_ANDROID, H_SHARE_CHOOSER), true);
             c.hAndroidChooserStdAction = getP(p, hookKey(SCOPE_ANDROID, H_CHOOSER_STD_ACTION), true);
             c.hZeusUnlockControl = getP(p, hookKey(SCOPE_ZEUS, H_UNLOCK_CTRL), true);
@@ -1241,6 +1245,7 @@ public final class AppConfig {
             if (H_USB_AUTH.equals(hook)) return hSystemUsbAuth;
             if (H_USB_AUTH_DIAG.equals(hook)) return hSystemUsbDiag;
             if (H_USB_MOUNT_FIX.equals(hook)) return hSystemUsbMountFix;
+            if (H_POWER_KEY_FIX.equals(hook)) return hSystemPowerKeyFix;
         } else if (SCOPE_ANDROID.equals(scope)) {
             if (H_SHARE_CHOOSER.equals(hook)) return hAndroidShareChooser;
             if (H_CHOOSER_STD_ACTION.equals(hook)) return hAndroidChooserStdAction;
