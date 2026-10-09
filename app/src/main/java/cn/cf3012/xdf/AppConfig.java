@@ -58,6 +58,8 @@ public final class AppConfig {
     public static final String SCOPE_GALLERY = "com.android.gallery3d";
     public static final String SCOPE_PACKAGE_INSTALLER = "com.android.packageinstaller";
     public static final String SCOPE_SYSTEMUI = "com.android.systemui";
+    /** XDF 升级中心 */
+    public static final String SCOPE_UPDATER = "cn.xdf.updater";
 
     /** hook 单元（per-scope 功能开关；键 = scopes.<scope>.hooks.<unit>） */
     public static final String H_UNLOCK_CTRL = "unlockControl";     // 解除管控限制（system A 组 / zeus B 组）
@@ -66,6 +68,9 @@ public final class AppConfig {
     public static final String H_DESKTOP_PROTECT = "desktopProtect"; // 桌面锁定防护（PMS 激进拦截）
     public static final String H_IME_GUARD = "imeGuard";            // 输入法保护
     public static final String H_SHARE_CHOOSER = "shareChooser";    // 分享面板修复
+    /** 绕过 IntentStandardActionManager.activityStartingStandardAction 的 9 条标准 Action 过滤
+     *  （DIAL/CALL/SEND/SENDTO/ANSWER/SEARCH/WEB_SEARCH/TRANSLATE/PROCESS_TEXT 被劫持到 zeus） */
+    public static final String H_CHOOSER_STD_ACTION = "chooserStdAction";
     public static final String H_SETTINGS_UNLOCK = "settingsUnlock"; // 完整设置
     public static final String H_LOCK_UNLOCK = "lockUnlock";        // 锁屏方式恢复（滑动/PIN/图案/密码）
     public static final String H_RECENT_TASKS = "recentTasks";      // 桌面增强（最近任务）
@@ -74,6 +79,9 @@ public final class AppConfig {
     public static final String H_QS_FIX = "qsFix";                // 控制中心修复（systemui）
     public static final String H_USB_AUTH = "usbAuth";          // USB 授权弹窗修复（system）
     public static final String H_USB_AUTH_DIAG = "usbAuthDiag";  // USB 授权诊断日志（system）
+    public static final String H_USB_MOUNT_FIX = "usbMountFix"; // USB OTG 挂载（system）
+    public static final String H_UPDATER_GUARD = "updaterGuard"; // 升级中心禁自动更新（updater 进程）
+    public static final String H_GESTURE_NAV = "gestureNavFix"; // 手势导航保持（systemui/settings）
 
     /** scope hook 单元的配置键名 */
     public static String hookKey(String scope, String hook) {
@@ -164,14 +172,17 @@ public final class AppConfig {
     public boolean hSystemDesktopProtect = false; // 桌面锁定防护（激进，原 pms_aggressive）
     public boolean hSystemUsbAuth = true;        // USB 授权弹窗修复（A10 UVC/CAMERA 误判 + BAL 放行）
     public boolean hSystemUsbDiag = false;       // USB 授权诊断日志（热路径，默认关）
+    public boolean hSystemUsbMountFix = true;    // OTG U盘挂载解禁（isMountDisallowed 恢复 AOSP 逻辑）
     // android
     public boolean hAndroidShareChooser = true;   // 分享面板修复
+    public boolean hAndroidChooserStdAction = true; // 标准 Action 过滤解除（打电话/分享/搜索等不再被劫持）
     // zeus
     public boolean hZeusUnlockControl = true;     // 解除管控限制（检查链/云控）
     public boolean hZeusSpoofDevice = true;       // 设备信息伪装
     // settings
     public boolean hSettingsUnlock = true;        // 完整设置
     public boolean hSettingsLockUnlock = true;    // 锁屏方式恢复（与「完整设置」相互独立）
+    public boolean hSettingsGestureNav = true;    // 手势导航设置页门禁放开（GestureNavFix C1）
     // launcher
     public boolean hLauncherRecentTasks = true;   // 桌面增强
     public boolean hLauncherHomeUnlock = true;    // 默认桌面解锁（launcher block）
@@ -181,6 +192,8 @@ public final class AppConfig {
     public boolean hInstallUnlock = true;         // 自由安装
     // systemui
     public boolean hSystemuiQsFix = true;          // 控制中心修复
+    public boolean hSystemuiGestureNav = true;     // 手势导航防复位（GestureNavFix B1+B3）
+    public boolean hUpdaterGuard = true;           // 升级中心禁自动/静默/强制更新（UpdaterGuard）
 
     public int logLevel = Log.INFO;
     public int inputMethodMode = 0; // 0=固化, 1=黑名单
@@ -770,14 +783,18 @@ public final class AppConfig {
             c.hSystemDesktopProtect = p.getBoolean(hookKey(SCOPE_SYSTEM, H_DESKTOP_PROTECT), false);
             c.hSystemUsbAuth = p.getBoolean(hookKey(SCOPE_SYSTEM, H_USB_AUTH), true);
             c.hSystemUsbDiag = p.getBoolean(hookKey(SCOPE_SYSTEM, H_USB_AUTH_DIAG), false);
+            c.hSystemUsbMountFix = p.getBoolean(hookKey(SCOPE_SYSTEM, H_USB_MOUNT_FIX), true);
             // android
             c.hAndroidShareChooser = p.getBoolean(hookKey(SCOPE_ANDROID, H_SHARE_CHOOSER), true);
+            c.hAndroidChooserStdAction = p.getBoolean(hookKey(SCOPE_ANDROID, H_CHOOSER_STD_ACTION), true);
             // zeus
             c.hZeusUnlockControl = p.getBoolean(hookKey(SCOPE_ZEUS, H_UNLOCK_CTRL), true);
             c.hZeusSpoofDevice = p.getBoolean(hookKey(SCOPE_ZEUS, H_SPOOF_DEVICE), true);
+            c.hUpdaterGuard = p.getBoolean(hookKey(SCOPE_UPDATER, H_UPDATER_GUARD), true);
             // settings
             c.hSettingsUnlock = p.getBoolean(hookKey(SCOPE_SETTINGS, H_SETTINGS_UNLOCK), true);
             c.hSettingsLockUnlock = p.getBoolean(hookKey(SCOPE_SETTINGS, H_LOCK_UNLOCK), true);
+            c.hSettingsGestureNav = p.getBoolean(hookKey(SCOPE_SETTINGS, H_GESTURE_NAV), true);
             // launcher
             c.hLauncherRecentTasks = p.getBoolean(hookKey(SCOPE_LAUNCHER, H_RECENT_TASKS), true);
             c.hLauncherHomeUnlock = p.getBoolean(hookKey(SCOPE_LAUNCHER, H_HOME_UNLOCK), true);
@@ -787,6 +804,7 @@ public final class AppConfig {
             c.hInstallUnlock = p.getBoolean(hookKey(SCOPE_PACKAGE_INSTALLER, H_INSTALL_UNLOCK), true);
             // systemui
             c.hSystemuiQsFix = p.getBoolean(hookKey(SCOPE_SYSTEMUI, H_QS_FIX), true);
+            c.hSystemuiGestureNav = p.getBoolean(hookKey(SCOPE_SYSTEMUI, H_GESTURE_NAV), true);
             c.logLevel = clampLevel(p.getInt(K_LOG_LEVEL, Log.INFO));
             c.inputMethodMode = clampInputMethodMode(p.getInt(K_INPUT_METHOD_MODE, 0));
             c.inputMethodList = p.getString(K_INPUT_METHOD_LIST, "");
@@ -967,16 +985,21 @@ public final class AppConfig {
             c.hSystemDesktopProtect = getP(p, hookKey(SCOPE_SYSTEM, H_DESKTOP_PROTECT), false);
             c.hSystemUsbAuth = getP(p, hookKey(SCOPE_SYSTEM, H_USB_AUTH), true);
             c.hSystemUsbDiag = getP(p, hookKey(SCOPE_SYSTEM, H_USB_AUTH_DIAG), false);
+            c.hSystemUsbMountFix = getP(p, hookKey(SCOPE_SYSTEM, H_USB_MOUNT_FIX), true);
             c.hAndroidShareChooser = getP(p, hookKey(SCOPE_ANDROID, H_SHARE_CHOOSER), true);
+            c.hAndroidChooserStdAction = getP(p, hookKey(SCOPE_ANDROID, H_CHOOSER_STD_ACTION), true);
             c.hZeusUnlockControl = getP(p, hookKey(SCOPE_ZEUS, H_UNLOCK_CTRL), true);
             c.hZeusSpoofDevice = getP(p, hookKey(SCOPE_ZEUS, H_SPOOF_DEVICE), true);
+            c.hUpdaterGuard = getP(p, hookKey(SCOPE_UPDATER, H_UPDATER_GUARD), true);
             c.hSettingsUnlock = getP(p, hookKey(SCOPE_SETTINGS, H_SETTINGS_UNLOCK), true);
             c.hSettingsLockUnlock = getP(p, hookKey(SCOPE_SETTINGS, H_LOCK_UNLOCK), true);
+            c.hSettingsGestureNav = getP(p, hookKey(SCOPE_SETTINGS, H_GESTURE_NAV), true);
             c.hLauncherRecentTasks = getP(p, hookKey(SCOPE_LAUNCHER, H_RECENT_TASKS), true);
             c.hLauncherHomeUnlock = getP(p, hookKey(SCOPE_LAUNCHER, H_HOME_UNLOCK), true);
             c.hGalleryEdit = getP(p, hookKey(SCOPE_GALLERY, H_GALLERY_EDIT), true);
             c.hInstallUnlock = getP(p, hookKey(SCOPE_PACKAGE_INSTALLER, H_INSTALL_UNLOCK), true);
             c.hSystemuiQsFix = getP(p, hookKey(SCOPE_SYSTEMUI, H_QS_FIX), true);
+            c.hSystemuiGestureNav = getP(p, hookKey(SCOPE_SYSTEMUI, H_GESTURE_NAV), true);
             c.logLevel = clampLevel(getI(p, K_LOG_LEVEL, Log.INFO));
             c.inputMethodMode = clampInputMethodMode(getI(p, K_INPUT_METHOD_MODE, 0));
             c.inputMethodList = p.getProperty(K_INPUT_METHOD_LIST, "");
@@ -1204,14 +1227,17 @@ public final class AppConfig {
             if (H_DESKTOP_PROTECT.equals(hook)) return hSystemDesktopProtect;
             if (H_USB_AUTH.equals(hook)) return hSystemUsbAuth;
             if (H_USB_AUTH_DIAG.equals(hook)) return hSystemUsbDiag;
+            if (H_USB_MOUNT_FIX.equals(hook)) return hSystemUsbMountFix;
         } else if (SCOPE_ANDROID.equals(scope)) {
             if (H_SHARE_CHOOSER.equals(hook)) return hAndroidShareChooser;
+            if (H_CHOOSER_STD_ACTION.equals(hook)) return hAndroidChooserStdAction;
         } else if (SCOPE_ZEUS.equals(scope)) {
             if (H_UNLOCK_CTRL.equals(hook)) return hZeusUnlockControl;
             if (H_SPOOF_DEVICE.equals(hook)) return hZeusSpoofDevice;
         } else if (SCOPE_SETTINGS.equals(scope)) {
             if (H_SETTINGS_UNLOCK.equals(hook)) return hSettingsUnlock;
             if (H_LOCK_UNLOCK.equals(hook)) return hSettingsLockUnlock;
+            if (H_GESTURE_NAV.equals(hook)) return hSettingsGestureNav;
         } else if (SCOPE_LAUNCHER.equals(scope)) {
             if (H_RECENT_TASKS.equals(hook)) return hLauncherRecentTasks;
             if (H_HOME_UNLOCK.equals(hook)) return hLauncherHomeUnlock;
@@ -1221,6 +1247,9 @@ public final class AppConfig {
             if (H_INSTALL_UNLOCK.equals(hook)) return hInstallUnlock;
         } else if (SCOPE_SYSTEMUI.equals(scope)) {
             if (H_QS_FIX.equals(hook)) return hSystemuiQsFix;
+            if (H_GESTURE_NAV.equals(hook)) return hSystemuiGestureNav;
+        } else if (SCOPE_UPDATER.equals(scope)) {
+            if (H_UPDATER_GUARD.equals(hook)) return hUpdaterGuard;
         }
         return true;
     }

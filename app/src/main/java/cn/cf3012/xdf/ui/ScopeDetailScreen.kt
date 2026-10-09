@@ -82,10 +82,15 @@ private fun hooksFor(scope: String): List<HookDef> = when (scope) {
             { it.hSystemUsbAuth }),
         HookDef(AppConfig.H_USB_AUTH_DIAG, "USB 授权诊断日志", "记录 USB 授权请求来源，便于排查不弹窗问题",
             { it.hSystemUsbDiag }),
+        HookDef(AppConfig.H_USB_MOUNT_FIX, "U盘挂载解禁", "插 OTG U 盘可正常挂载读写（解除系统硬编码拦截）",
+            { it.hSystemUsbMountFix }),
     )
     AppConfig.SCOPE_ANDROID -> listOf(
         HookDef(AppConfig.H_SHARE_CHOOSER, "分享面板修复", "恢复分享面板的\"仅此一次\"与点击响应",
             { it.hAndroidShareChooser }),
+        HookDef(AppConfig.H_CHOOSER_STD_ACTION, "标准动作过滤解除",
+            "打电话 / 发短信 / 分享 / 搜索 / 文本处理不再被跳转到家长管控页面",
+            { it.hAndroidChooserStdAction }),
     )
     AppConfig.SCOPE_ZEUS -> listOf(
         HookDef(AppConfig.H_UNLOCK_CTRL, "解除管控限制", "跳过学习机的管控检查与云控下发",
@@ -98,6 +103,8 @@ private fun hooksFor(scope: String): List<HookDef> = when (scope) {
             { it.hSettingsUnlock }),
         HookDef(AppConfig.H_LOCK_UNLOCK, "锁屏方式恢复", "恢复滑动 / PIN / 图案 / 密码的选择入口",
             { it.hSettingsLockUnlock }),
+        HookDef(AppConfig.H_GESTURE_NAV, "手势导航解锁", "第三方桌面下也能在设置里勾选「全面屏手势」",
+            { it.hSettingsGestureNav }),
     )
     AppConfig.SCOPE_LAUNCHER -> listOf(
         HookDef(AppConfig.H_RECENT_TASKS, "桌面增强", "恢复最近任务列表不被隐藏",
@@ -113,9 +120,15 @@ private fun hooksFor(scope: String): List<HookDef> = when (scope) {
         HookDef(AppConfig.H_INSTALL_UNLOCK, "自由安装", "允许安装任意来源的应用",
             { it.hInstallUnlock }),
     )
+    AppConfig.SCOPE_UPDATER -> listOf(
+        HookDef(AppConfig.H_UPDATER_GUARD, "禁自动更新", "拦截夜间静默下载安装与自动重启刷机，仅保留手动升级",
+            { it.hUpdaterGuard }),
+    )
     AppConfig.SCOPE_SYSTEMUI -> listOf(
         HookDef(AppConfig.H_QS_FIX, "控制中心修复", "下拉菜单可完整展开、按钮恢复分页与排版",
             { it.hSystemuiQsFix }),
+        HookDef(AppConfig.H_GESTURE_NAV, "手势导航防复位", "换第三方桌面 / SystemUI 重启后不被切回三键导航",
+            { it.hSystemuiGestureNav }),
     )
     else -> emptyList()
 }

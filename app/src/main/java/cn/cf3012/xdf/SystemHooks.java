@@ -35,19 +35,23 @@ final class SystemHooks {
     private SystemHooks() {
     }
 
-    static void hookAll(ClassLoader cl) {
+    static void hookAll(ClassLoader cl, boolean shareChooser, boolean chooserStdAction) {
         if (!sHooked.add(cl)) {
             return;
         }
-        try {
-            hookResolverButton(cl);
-        } catch (Throwable t) {
-            XDFHook.loge(t, TAG, "ResolverActivity.onButtonClick");
+        if (shareChooser) {
+            try {
+                hookResolverButton(cl);
+            } catch (Throwable t) {
+                XDFHook.loge(t, TAG, "ResolverActivity.onButtonClick");
+            }
         }
-        try {
-            hookChooser(cl);
-        } catch (Throwable t) {
-            XDFHook.loge(t, TAG, "ChooserActivity");
+        if (shareChooser || chooserStdAction) {
+            try {
+                hookChooser(cl, chooserStdAction);
+            } catch (Throwable t) {
+                XDFHook.loge(t, TAG, "ChooserActivity");
+            }
         }
     }
 
@@ -71,28 +75,20 @@ final class SystemHooks {
     /* ==================== ChooserActivity ==================== */
 
     /**
-     * ChooserActivity 点击修复已迁移到 {@link ChooserClickRestore}（单 hook
-     * loadViewsIntoRow，100% 复刻 AOSP 的 $2/$3 监听器绑定）。
-     *
-     * 【原两招为何整体删除】—— 逐方法核对 smali 后的结论：
-     *  招1 completeServiceTargetLoading 后清 mServiceTargets 的 NotSelectable：
-     *      该方法 ROM 【未改动】（两边均 14 指令），且其 removeIf + 空列表补
-     *      EmptyTargetInfo 正是「服务目标异步加载」的正常设计。强行删占位符会
-     *      破坏列表项数与实际目标的一致性，属有害操作。
-     *  招2 startSelected 命中 NotSelectable 时转发现实目标：
-     *      该早退 ROM 【未改动】（.line 1285-1286 保留），且仅
-     *      EmptyTargetInfo / PlaceHolderTargetInfo 继承 NotSelectableTargetInfo
-     *      （SelectableTargetInfo extends Object，不受影响）—— 正常目标根本
-     *      不会命中。findRealTarget 扫描 mCallerTargets/mDisplayList 属猜测式
-     *      定位，可能转发到错误目标。
-     *
-     * 真正的缺口只是 loadViewsIntoRow 里被删的两次 setXxxListener，
-     * 前后（含 RowViewHolder.mItemIndices 映射表与 bindViewHolder 填充逻辑）
-     * ROM 全部完好，因此单点修复即可，无需任何数据层改写。
-     *
-     * 保留本方法名作为调用点（由 SystemHooks.hookAll 调用），避免改动调度。
+     * ChooserActivity 修复
      */
-    private static void hookChooser(ClassLoader cl) {
+    private static void hookChooser(ClassLoader cl, boolean stdActionEnabled) {
+        if (stdActionEnabled) {
+            // 独立开关：解除 IntentStandardActionManager 对 9 条标准 Action 的劫持过滤。
+            // 不依赖「分享面板修复」，两者开关相互独立。
+            try {
+                ChooserStandardActionRestore.hookAll(cl);
+            } catch (Throwable t) {
+                XDFHook.loge(t, TAG, "ChooserStandardActionRestore");
+            }
+        } else {
+            XDFHook.logi(TAG, "chooserStdAction disabled, skip");
+        }
         ChooserClickRestore.hookAll(cl);
     }
 

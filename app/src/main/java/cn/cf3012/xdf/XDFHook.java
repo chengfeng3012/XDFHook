@@ -27,14 +27,19 @@ import java.util.Set;
  *                            + InputMethodHooks（输入法固化/黑名单）
  *                            + UsbAuthHooks（USB 授权弹窗：A10 UVC/CAMERA 误判修正
  *                                            + 后台启动拦截放行 + 强制置顶）
+ *                            + UsbMountHooks（OTG U盘挂载解禁：isMountDisallowed 恢复 AOSP）
  *   cn.xdf.zeus            → ZeusUnlocker（B 组检查链/云控/序列号短路）
  *   com.android.settings   → LockScreenHooks（锁屏方式恢复：原生 security_settings_picker
  *                                         + 拦截 XDF 逐项摘除 + 左栏锁屏页注入「屏幕锁定」）
+ *                            + GestureNavHooks.hookSettings（手势导航设置页门禁放开）
  *                            + SettingsHooks（属性放行/开发者选项/更多设置入口）
  *                            + UiRestorer（显示页/声音页/系统页条目还原）
  *   com.android.gallery3d  → GalleryHooks（相册"编辑"按钮恢复）
  *   com.android.launcher3  → LauncherHooks（最近任务隐藏列表解除）
  *                            + HomeUnlocker（block setXdfDefaultHomeLauncher）
+ *   cn.xdf.updater        → UpdaterGuardHooks（禁自动/静默/强制更新，防夜间刷机）
+ *   com.android.systemui  → QuickSettingsHooks（控制中心修复）
+ *                            + GestureNavHooks.hookSystemUi（手势导航防复位 B1+B3）
  *   android:ui            → SystemHooks → ResolverAlwaysRestore（「仅此一次」/「始终」
  *                                            按钮与 startSelected 分派恢复）
  *                            + ChooserClickRestore（ChooserActivity 图标点击监听）
@@ -62,6 +67,8 @@ public class XDFHook extends XposedModule {
     /** framework 分享面板宿主（ChooserActivity/ResolverActivity，proc=android:ui） */
     public static final String PKG_ANDROID = "android";
     public static final String PKG_SYSTEMUI = "com.android.systemui";
+    /** XDF 升级中心 */
+    public static final String PKG_UPDATER = "cn.xdf.updater";
 
     /** 模块接口实例（XposedModule 实例即 XposedInterface），各子模块静态使用 */
     private static volatile XposedInterface sApi;
@@ -214,6 +221,16 @@ public class XDFHook extends XposedModule {
         } else {
             logi(TAG, "usb auth fix disabled, skip");
         }
+        // OTG U盘挂载解禁（isMountDisallowed 恢复 AOSP 逻辑，单 hook）
+        if (cfg.hSystemUsbMountFix) {
+            try {
+                UsbMountHooks.hookSystemServer(param.getClassLoader());
+            } catch (Throwable t) {
+                loge(t, TAG, "UsbMountHooks.systemServer");
+            }
+        } else {
+            logi(TAG, "usb mount fix disabled, skip");
+        }
     }
 
     @Override
@@ -274,6 +291,17 @@ public class XDFHook extends XposedModule {
                     });
                 } else {
                     logi(TAG, "lock screen unlock disabled, skip");
+                }
+                // 手势导航设置页门禁放开（GestureNavFix C1；独立于「完整设置」）
+                if (cfg.hookEnabled(AppConfig.SCOPE_SETTINGS, AppConfig.H_GESTURE_NAV)) {
+                    runGuarded("GestureNavHooks.settings", new HookInstall() {
+                        @Override
+                        public void run() throws Exception {
+                            GestureNavHooks.hookSettings(cl);
+                        }
+                    });
+                } else {
+                    logi(TAG, "gesture nav settings gate disabled, skip");
                 }
                 if (!cfg.hSettingsUnlock) {
                     logi(TAG, "settings unlock disabled, skip");
@@ -346,24 +374,52 @@ public class XDFHook extends XposedModule {
                 // 注意：此进程非 system_server，kill 进程重开即可生效（无需重启系统）。
                 if (!cfg.hSystemuiQsFix) {
                     logi(TAG, "qs fix disabled, skip");
-                    break;
+                } else {
+                    runGuarded("QuickSettingsHooks", new HookInstall() {
+                        @Override
+                        public void run() throws Exception {
+                            QuickSettingsHooks.hookAll(cl);
+                        }
+                    });
                 }
-                runGuarded("QuickSettingsHooks", new HookInstall() {
-                    @Override
-                    public void run() throws Exception {
-                        QuickSettingsHooks.hookAll(cl);
-                    }
-                });
+                // 手势导航防复位（GestureNavFix B1 判据 + B3 threebutton 拦截）：
+                // ★构造器/广播都会复位，SystemUI 重启即触发 → 独立于控制中心开关
+                if (cfg.hookEnabled(AppConfig.SCOPE_SYSTEMUI, AppConfig.H_GESTURE_NAV)) {
+                    runGuarded("GestureNavHooks.systemui", new HookInstall() {
+                        @Override
+                        public void run() throws Exception {
+                            GestureNavHooks.hookSystemUi(cl);
+                        }
+                    });
+                } else {
+                    logi(TAG, "gesture nav reset guard disabled, skip");
+                }
                 break;
             case PKG_ANDROID:
                 // 分享面板宿主进程（android:ui）：分享面板修复（"仅此一次"/点击修复）
-                if (cfg.hAndroidShareChooser) {
+                // + 标准动作过滤解除（ActivityStarter 之外的 IntentStandardActionManager 劫持）
+                if (cfg.hAndroidShareChooser || cfg.hAndroidChooserStdAction) {
                     runGuarded("SystemHooks", new HookInstall() {
                         @Override
                         public void run() throws Exception {
-                            SystemHooks.hookAll(cl);
+                            SystemHooks.hookAll(cl, cfg.hAndroidShareChooser,
+                                    cfg.hAndroidChooserStdAction);
                         }
                     });
+                }
+                break;
+            case PKG_UPDATER:
+                // 禁自动/静默/强制更新（UpdaterGuard 三层：策略/排程/Worker）
+                // —— 手动升级路径 MainActivity→task.resume() 不经过被拦的任何一环
+                if (cfg.hookEnabled(AppConfig.SCOPE_UPDATER, AppConfig.H_UPDATER_GUARD)) {
+                    runGuarded("UpdaterGuardHooks", new HookInstall() {
+                        @Override
+                        public void run() throws Exception {
+                            UpdaterGuardHooks.hookAll(cl);
+                        }
+                    });
+                } else {
+                    logi(TAG, "updater guard disabled, skip");
                 }
                 break;
             default:
