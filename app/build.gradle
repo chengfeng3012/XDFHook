@@ -51,8 +51,8 @@ android {
         // 设备 XDF-N1 为 Android 10 (API 29)，targetSdk 与 OS 一致，零 compat 层
         // Android 10 (API 29) 设备兼容；向上升级仅影响新机型行为
         targetSdk 34
-        versionCode 17
-        versionName "1.0.17"
+        versionCode 18
+        versionName "1.0.18"
     }
 
     signingConfigs {
