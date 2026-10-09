@@ -57,6 +57,10 @@ private val NEEDS_RESTART_ON_ENABLE = setOf(
     AppConfig.hookKey(AppConfig.SCOPE_SYSTEM, AppConfig.H_IME_GUARD),
     AppConfig.hookKey(AppConfig.SCOPE_SETTINGS, AppConfig.H_LOCK_UNLOCK),
     AppConfig.hookKey(AppConfig.SCOPE_ZEUS, AppConfig.H_SPOOF_DEVICE),
+    // 环境伪装在 onPackageReady 一次性执行，开启后必须重启目标 app 才会重跑
+    AppConfig.hookKey(AppConfig.SCOPE_ZEUS, AppConfig.H_SPOOF_ENV),
+    AppConfig.hookKey(AppConfig.SCOPE_APPSTORE, AppConfig.H_SPOOF_ENV),
+    AppConfig.hookKey(AppConfig.SCOPE_UPDATER, AppConfig.H_SPOOF_ENV),
 )
 
 
@@ -97,6 +101,8 @@ private fun hooksFor(scope: String): List<HookDef> = when (scope) {
             { it.hZeusUnlockControl }),
         HookDef(AppConfig.H_SPOOF_DEVICE, "设备信息伪装", "向管控服务伪造型号与序列号",
             { it.hZeusSpoofDevice }),
+        HookDef(AppConfig.H_SPOOF_ENV, "生产环境伪装", "伪装成正式版，管理端域名不切测试环境",
+            { it.hZeusSpoofEnv }),
     )
     AppConfig.SCOPE_SETTINGS -> listOf(
         HookDef(AppConfig.H_SETTINGS_UNLOCK, "完整设置", "恢复被隐藏的设置项与开发者选项",
@@ -120,7 +126,13 @@ private fun hooksFor(scope: String): List<HookDef> = when (scope) {
         HookDef(AppConfig.H_INSTALL_UNLOCK, "自由安装", "允许安装任意来源的应用",
             { it.hInstallUnlock }),
     )
+    AppConfig.SCOPE_APPSTORE -> listOf(
+        HookDef(AppConfig.H_SPOOF_ENV, "生产环境伪装", "BaseUrlKt.BASE_URL 走正式域而非 test.xdf.cn",
+            { it.hAppstoreSpoofEnv }),
+    )
     AppConfig.SCOPE_UPDATER -> listOf(
+        HookDef(AppConfig.H_SPOOF_ENV, "生产环境伪装", "Device.debug=false，升级检查走正式域",
+            { it.hUpdaterSpoofEnv }),
         HookDef(AppConfig.H_UPDATER_GUARD, "禁自动更新", "拦截夜间静默下载安装与自动重启刷机，仅保留手动升级",
             { it.hUpdaterGuard }),
     )

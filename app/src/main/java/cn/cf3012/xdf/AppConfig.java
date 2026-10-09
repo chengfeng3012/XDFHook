@@ -58,7 +58,9 @@ public final class AppConfig {
     public static final String SCOPE_GALLERY = "com.android.gallery3d";
     public static final String SCOPE_PACKAGE_INSTALLER = "com.android.packageinstaller";
     public static final String SCOPE_SYSTEMUI = "com.android.systemui";
-    /** XDF 升级中心 */
+    /** XDF 应用商店（BaseUrlKt.BASE_URL 仅由 isDebugOs 决定 → 会切测试域） */
+    public static final String SCOPE_APPSTORE = "cn.xdf.appstore";
+    /** XDF 升级中心（Device.debug = !Build.IS_USER，static final 在 <clinit> 固化） */
     public static final String SCOPE_UPDATER = "cn.xdf.updater";
 
     /** hook 单元（per-scope 功能开关；键 = scopes.<scope>.hooks.<unit>） */
@@ -82,6 +84,7 @@ public final class AppConfig {
     public static final String H_USB_MOUNT_FIX = "usbMountFix"; // USB OTG 挂载（system）
     public static final String H_UPDATER_GUARD = "updaterGuard"; // 升级中心禁自动更新（updater 进程）
     public static final String H_GESTURE_NAV = "gestureNavFix"; // 手势导航保持（systemui/settings）
+    public static final String H_SPOOF_ENV = "spoofEnv";   // 生产环境伪装（Build.TYPE/IS_USER）
 
     /** scope hook 单元的配置键名 */
     public static String hookKey(String scope, String hook) {
@@ -193,6 +196,10 @@ public final class AppConfig {
     // systemui
     public boolean hSystemuiQsFix = true;          // 控制中心修复
     public boolean hSystemuiGestureNav = true;     // 手势导航防复位（GestureNavFix B1+B3）
+    // 生产环境伪装（BuildSpoofHooks）
+    public boolean hZeusSpoofEnv = true;           // zeus 环境伪装
+    public boolean hAppstoreSpoofEnv = true;       // 应用商店环境伪装
+    public boolean hUpdaterSpoofEnv = true;        // 升级中心环境伪装
     public boolean hUpdaterGuard = true;           // 升级中心禁自动/静默/强制更新（UpdaterGuard）
 
     public int logLevel = Log.INFO;
@@ -790,6 +797,9 @@ public final class AppConfig {
             // zeus
             c.hZeusUnlockControl = p.getBoolean(hookKey(SCOPE_ZEUS, H_UNLOCK_CTRL), true);
             c.hZeusSpoofDevice = p.getBoolean(hookKey(SCOPE_ZEUS, H_SPOOF_DEVICE), true);
+            c.hZeusSpoofEnv = p.getBoolean(hookKey(SCOPE_ZEUS, H_SPOOF_ENV), true);
+            c.hAppstoreSpoofEnv = p.getBoolean(hookKey(SCOPE_APPSTORE, H_SPOOF_ENV), true);
+            c.hUpdaterSpoofEnv = p.getBoolean(hookKey(SCOPE_UPDATER, H_SPOOF_ENV), true);
             c.hUpdaterGuard = p.getBoolean(hookKey(SCOPE_UPDATER, H_UPDATER_GUARD), true);
             // settings
             c.hSettingsUnlock = p.getBoolean(hookKey(SCOPE_SETTINGS, H_SETTINGS_UNLOCK), true);
@@ -990,6 +1000,9 @@ public final class AppConfig {
             c.hAndroidChooserStdAction = getP(p, hookKey(SCOPE_ANDROID, H_CHOOSER_STD_ACTION), true);
             c.hZeusUnlockControl = getP(p, hookKey(SCOPE_ZEUS, H_UNLOCK_CTRL), true);
             c.hZeusSpoofDevice = getP(p, hookKey(SCOPE_ZEUS, H_SPOOF_DEVICE), true);
+            c.hZeusSpoofEnv = getP(p, hookKey(SCOPE_ZEUS, H_SPOOF_ENV), true);
+            c.hAppstoreSpoofEnv = getP(p, hookKey(SCOPE_APPSTORE, H_SPOOF_ENV), true);
+            c.hUpdaterSpoofEnv = getP(p, hookKey(SCOPE_UPDATER, H_SPOOF_ENV), true);
             c.hUpdaterGuard = getP(p, hookKey(SCOPE_UPDATER, H_UPDATER_GUARD), true);
             c.hSettingsUnlock = getP(p, hookKey(SCOPE_SETTINGS, H_SETTINGS_UNLOCK), true);
             c.hSettingsLockUnlock = getP(p, hookKey(SCOPE_SETTINGS, H_LOCK_UNLOCK), true);
@@ -1234,6 +1247,7 @@ public final class AppConfig {
         } else if (SCOPE_ZEUS.equals(scope)) {
             if (H_UNLOCK_CTRL.equals(hook)) return hZeusUnlockControl;
             if (H_SPOOF_DEVICE.equals(hook)) return hZeusSpoofDevice;
+            if (H_SPOOF_ENV.equals(hook)) return hZeusSpoofEnv;
         } else if (SCOPE_SETTINGS.equals(scope)) {
             if (H_SETTINGS_UNLOCK.equals(hook)) return hSettingsUnlock;
             if (H_LOCK_UNLOCK.equals(hook)) return hSettingsLockUnlock;
@@ -1248,7 +1262,10 @@ public final class AppConfig {
         } else if (SCOPE_SYSTEMUI.equals(scope)) {
             if (H_QS_FIX.equals(hook)) return hSystemuiQsFix;
             if (H_GESTURE_NAV.equals(hook)) return hSystemuiGestureNav;
+        } else if (SCOPE_APPSTORE.equals(scope)) {
+            if (H_SPOOF_ENV.equals(hook)) return hAppstoreSpoofEnv;
         } else if (SCOPE_UPDATER.equals(scope)) {
+            if (H_SPOOF_ENV.equals(hook)) return hUpdaterSpoofEnv;
             if (H_UPDATER_GUARD.equals(hook)) return hUpdaterGuard;
         }
         return true;

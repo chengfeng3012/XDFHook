@@ -6,3 +6,5 @@ com.android.settings
 com.android.launcher3
 com.android.gallery3d
 com.android.packageinstaller
+cn.xdf.appstore
+cn.xdf.updater

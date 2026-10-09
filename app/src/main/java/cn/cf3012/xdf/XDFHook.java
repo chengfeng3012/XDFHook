@@ -37,7 +37,11 @@ import java.util.Set;
  *   com.android.gallery3d  → GalleryHooks（相册"编辑"按钮恢复）
  *   com.android.launcher3  → LauncherHooks（最近任务隐藏列表解除）
  *                            + HomeUnlocker（block setXdfDefaultHomeLauncher）
- *   cn.xdf.updater        → UpdaterGuardHooks（禁自动/静默/强制更新，防夜间刷机）
+ *   cn.xdf.appstore       → BuildSpoofHooks（生产环境伪装：Build.TYPE/IS_USER，
+ *                                            让 BaseUrlKt.BASE_URL 走正式域）
+ *   cn.xdf.updater        → BuildSpoofHooks（同上：Device.debug = !Build.IS_USER）
+ *                            + UpdaterGuardHooks（禁自动/静默/强制更新，防夜间刷机）
+ *   cn.xdf.zeus           → BuildSpoofHooks（同上：BaseUrlHelper 三 host）+ 见上
  *   com.android.systemui  → QuickSettingsHooks（控制中心修复）
  *                            + GestureNavHooks.hookSystemUi（手势导航防复位 B1+B3）
  *   android:ui            → SystemHooks → ResolverAlwaysRestore（「仅此一次」/「始终」
@@ -67,7 +71,9 @@ public class XDFHook extends XposedModule {
     /** framework 分享面板宿主（ChooserActivity/ResolverActivity，proc=android:ui） */
     public static final String PKG_ANDROID = "android";
     public static final String PKG_SYSTEMUI = "com.android.systemui";
-    /** XDF 升级中心 */
+    /** XDF 应用商店（BaseUrlKt.BASE_URL 单条件依赖 isDebugOs → 需环境伪装） */
+    public static final String PKG_APPSTORE = "cn.xdf.appstore";
+    /** XDF 升级中心（Device.debug = !Build.IS_USER → 需环境伪装） */
     public static final String PKG_UPDATER = "cn.xdf.updater";
 
     /** 模块接口实例（XposedModule 实例即 XposedInterface），各子模块静态使用 */
@@ -278,6 +284,18 @@ public class XDFHook extends XposedModule {
                 } else {
                     logi(TAG, "zeus spoof disabled, skip B4");
                 }
+                // zeus 进程：生产环境伪装（BaseUrlHelper 三 host 由 isDebugOs 二选一，
+                // 且在 <clinit> 固化 → 必须在类初始化前把 Build 改好）
+                if (cfg.hookEnabled(AppConfig.SCOPE_ZEUS, AppConfig.H_SPOOF_ENV)) {
+                    runGuarded("BuildSpoofHooks.zeus", new HookInstall() {
+                        @Override
+                        public void run() throws Exception {
+                            BuildSpoofHooks.hookAll(pkg, cl);
+                        }
+                    });
+                } else {
+                    logi(TAG, "zeus env spoof disabled, skip");
+                }
                 break;
             case PKG_SETTINGS:
                 // 锁屏方式恢复：独立 hook 单元，故置于「完整设置」门控之前
@@ -408,7 +426,34 @@ public class XDFHook extends XposedModule {
                     });
                 }
                 break;
+            case PKG_APPSTORE:
+                // 应用商店：BaseUrlKt.BASE_URL = lazy{ if(isDebugOs()) test else prod }
+                // —— 只有 isDebugOs 一个条件，漏了 isDebugApk 双保险 → 必须伪装。
+                // 注意 BASE_URL 是 lazy，类初始化才求值，故必须在包就绪时尽早改 Build。
+                if (cfg.hookEnabled(AppConfig.SCOPE_APPSTORE, AppConfig.H_SPOOF_ENV)) {
+                    runGuarded("BuildSpoofHooks.appstore", new HookInstall() {
+                        @Override
+                        public void run() throws Exception {
+                            BuildSpoofHooks.hookAll(pkg, cl);
+                        }
+                    });
+                } else {
+                    logi(TAG, "appstore env spoof disabled, skip");
+                }
+                break;
             case PKG_UPDATER:
+                // 升级中心：Device.debug = !Build.IS_USER 是 static final，
+                // Host.kt 两个 host 在 Device 的 <clinit> 里固化 → 同样要赶在类初始化前。
+                if (cfg.hookEnabled(AppConfig.SCOPE_UPDATER, AppConfig.H_SPOOF_ENV)) {
+                    runGuarded("BuildSpoofHooks.updater", new HookInstall() {
+                        @Override
+                        public void run() throws Exception {
+                            BuildSpoofHooks.hookAll(pkg, cl);
+                        }
+                    });
+                } else {
+                    logi(TAG, "updater env spoof disabled, skip");
+                }
                 // 禁自动/静默/强制更新（UpdaterGuard 三层：策略/排程/Worker）
                 // —— 手动升级路径 MainActivity→task.resume() 不经过被拦的任何一环
                 if (cfg.hookEnabled(AppConfig.SCOPE_UPDATER, AppConfig.H_UPDATER_GUARD)) {
