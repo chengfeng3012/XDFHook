@@ -1,7 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- 日志落盘路径写入（自定义路径即时校验 / 落盘），Android 10 需运行时授权 -->
+    <!-- 历史遗留：日志落盘已整体移除（FileLogger 只走 logcat + api.log），
+         这两条外部存储权限当前无代码依赖。APK 下载/安装走 App 私有目录
+         （getExternalFilesDir / filesDir），不需要它们。保留仅为兼容旧行为。 -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <!-- 在线检查更新：访问 GitHub API -->

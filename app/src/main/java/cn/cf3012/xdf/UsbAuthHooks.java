@@ -544,19 +544,39 @@ final class UsbAuthHooks {
     }
 
     /** 按参数个数找方法（private 方法签名在不同 ROM 上可能微调） */
+    /**
+     * 按「方法名 + 参数个数」查找（仅在无法用类型精确匹配时使用）。
+     *
+     * <p>★ 按个数匹配的固有风险：同名同参数量的重载会撞错对象 —— 本项目在
+     * {@code checkPermission} 上真实踩过（见 {@link #hookUvcCameraMisjudge} 注释）。
+     * 这里补一道「同 arity 多匹配」告警：命中多个时显式记日志并沿用第一个，
+     * 避免将来 ROM 增加重载后静默取错方法（2026-10-17 review）。</p>
+     */
     private static Method findMethod(Class<?> cls, String name, int arity) {
+        int matches = 0;
+        Method first = null;
         for (Class<?> c = cls; c != null; c = c.getSuperclass()) {
             try {
                 for (Method m : c.getDeclaredMethods()) {
                     if (m.getName().equals(name) && m.getParameterTypes().length == arity) {
-                        m.setAccessible(true);
-                        return m;
+                        matches++;
+                        if (first == null) {
+                            m.setAccessible(true);
+                            first = m;
+                        } else {
+                            XDFHook.logw(TAG, "arity-match ambiguity: " + name + "/" + arity
+                                    + " -> using " + first + ", also saw " + m);
+                        }
                     }
                 }
             } catch (Throwable ignored) {
             }
         }
-        return null;
+        if (matches > 1) {
+            XDFHook.logw(TAG, "findMethod(" + name + "," + arity + ") matched " + matches
+                    + " overloads; consider switching to type-exact matching");
+        }
+        return first;
     }
 
     /* ==================== 日志 ==================== */

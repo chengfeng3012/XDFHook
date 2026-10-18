@@ -3,6 +3,7 @@ package cn.cf3012.xdf;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 轻量反射工具：替代旧 API 的 XposedHelpers。
@@ -73,27 +74,81 @@ public final class Reflect {
     }
 
     public static Field findField(Class<?> clazz, String name) throws NoSuchFieldException {
-        for (Class<?> c = clazz; c != null; c = c.getSuperclass()) {
-            try {
-                return c.getDeclaredField(name);
-            } catch (NoSuchFieldException ignored) {
-            }
-        }
-        throw new NoSuchFieldException(clazz.getName() + "." + name);
+        return findFieldCached(clazz, name);
     }
 
-    /* ==================== 内部 ==================== */
+    /* ==================== 查找缓存（2026-10-17 review：热路径去反射开销） ====================
+     *
+     * 每次 findMethod/findField 都沿继承链 getDeclaredXxx，在热路径上是纯浪费：
+     * UiRestorer 的 Preference.onBindViewHolder（列表每次 bind）、InputMethodHooks
+     * 每次 putString、UsbAuthHooks 的权限复核、AppConfig 反射读进程名等都会走到这里。
+     * 用 ClassValue 做 per-Class 缓存（而不是全局 Map<类名,...>）：天然规避不同
+     * ClassLoader 的同名类冲突、GC 友好、无锁读取。
+     */
+
+    private static final ClassValue<ConcurrentHashMap<String, Method>> METHOD_CACHE =
+            new ClassValue<ConcurrentHashMap<String, Method>>() {
+                @Override
+                protected ConcurrentHashMap<String, Method> computeValue(Class<?> type) {
+                    return new ConcurrentHashMap<>();
+                }
+            };
+
+    private static final ClassValue<ConcurrentHashMap<String, Field>> FIELD_CACHE =
+            new ClassValue<ConcurrentHashMap<String, Field>>() {
+                @Override
+                protected ConcurrentHashMap<String, Field> computeValue(Class<?> type) {
+                    return new ConcurrentHashMap<>();
+                }
+            };
+
+    /** 查找缓存 key：方法名 + 形参类型名（null 参数类型记为 '?'） */
+    private static String sig(String name, Class<?>[] types) {
+        StringBuilder sb = new StringBuilder(name).append('(');
+        if (types != null) {
+            for (Class<?> t : types) {
+                sb.append(t == null ? "?" : t.getName()).append(',');
+            }
+        }
+        return sb.append(')').toString();
+    }
 
     private static Method findMethod(Class<?> clazz, String name, Class<?>[] types)
             throws NoSuchMethodException {
+        String key = sig(name, types);
+        ConcurrentHashMap<String, Method> cache = METHOD_CACHE.get(clazz);
+        Method cached = cache.get(key);
+        if (cached != null) {
+            return cached;
+        }
         for (Class<?> c = clazz; c != null; c = c.getSuperclass()) {
             try {
-                return (types == null || types.length == 0)
+                Method m = (types == null || types.length == 0)
                         ? c.getDeclaredMethod(name)
                         : c.getDeclaredMethod(name, types);
+                cache.putIfAbsent(key, m);
+                return m;
             } catch (NoSuchMethodException ignored) {
             }
         }
         throw new NoSuchMethodException(clazz.getName() + "." + name);
+    }
+
+    /** 字段查找（含继承链）带缓存；findField 对外仍是唯一入口 */
+    private static Field findFieldCached(Class<?> clazz, String name) throws NoSuchFieldException {
+        ConcurrentHashMap<String, Field> cache = FIELD_CACHE.get(clazz);
+        Field cached = cache.get(name);
+        if (cached != null) {
+            return cached;
+        }
+        for (Class<?> c = clazz; c != null; c = c.getSuperclass()) {
+            try {
+                Field f = c.getDeclaredField(name);
+                cache.putIfAbsent(name, f);
+                return f;
+            } catch (NoSuchFieldException ignored) {
+            }
+        }
+        throw new NoSuchFieldException(clazz.getName() + "." + name);
     }
 }

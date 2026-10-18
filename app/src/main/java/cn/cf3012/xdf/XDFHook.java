@@ -108,9 +108,6 @@ public class XDFHook extends XposedModule {
         DebugProbe.setProcessName(param.getProcessName());
         // 日志通道先行：记录进程名（logcat + framework api.log 两条通道共用）
         FileLogger.hookInit(param.getProcessName(), param.isSystemServer());
-        if (param.isSystemServer()) {
-            DebugProbe.setAppDir(new java.io.File("/data/system"));
-        }
         DebugProbe.log("onModuleLoaded: entry invoked, process=" + param.getProcessName()
                 + ", isSystemServer=" + param.isSystemServer());
         // 框架能力位诊断：PROP_CAP_SYSTEM 决定本模块能否 hook system_server。
@@ -257,11 +254,6 @@ public class XDFHook extends XposedModule {
         AppConfig.hookInit(this);
         final String pkg = param.getPackageName();
         final ClassLoader cl = param.getClassLoader();
-        try {
-            DebugProbe.setAppDir(new java.io.File(
-                    param.getApplicationInfo().dataDir, "files"));
-        } catch (Throwable ignored) {
-        }
         DebugProbe.log("onPackageReady: begin, pkg=" + pkg);
         logi(TAG, "loaded into " + pkg);
 

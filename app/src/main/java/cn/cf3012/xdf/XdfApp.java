@@ -22,7 +22,6 @@ public class XdfApp extends Application {
         //   此标记让 FileLogger 在 UI 进程只走 logcat。
         FileLogger.markUiProcess();
         DebugProbe.setProcessName("app-ui");
-        DebugProbe.setAppDir(getFilesDir());
         // UI 私有配置文件（不需要 root）：remote 通道不可用时的可靠兜底落地点
         AppConfig.setUiFileDir(getFilesDir());
         DebugProbe.log("XdfApp.onCreate");

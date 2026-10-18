@@ -37,6 +37,8 @@ public final class FileLogger {
 
     private static volatile int sMinLevel = Log.INFO;
     private static volatile String sProcName = "unknown";
+    /** 是否为模块 App 自己的 UI 进程（UI 进程不被 hook，无 api 类，见 log()） */
+    private static volatile boolean sUiProcess;
 
     private FileLogger() {
     }
@@ -104,9 +106,6 @@ public final class FileLogger {
             // 连类都加载不了时也不能影响调用方（logcat 已经写过了）
         }
     }
-
-    /** 是否为模块 App 自己的 UI 进程（UI 进程不被 hook，无 api 类） */
-    private static volatile boolean sUiProcess;
 
     /**
      * 标记当前进程为模块 UI 进程。

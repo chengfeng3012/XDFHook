@@ -398,8 +398,12 @@ final class SettingsHooks {
                         XDFHook.logi(TAG, "more-settings item -> in-place: " + fragName);
                         return true;
                     } catch (Throwable t) {
+                        // ★ 不再二次 chain.proceed()：本 hook 的多个早退分支都已调用
+                        //   过 chain.proceed()，而 Chain 的 proceed 不保证幂等
+                        //   （重复调用会重跑原方法）。异常时保守返回 false（未消费），
+                        //   让上层按未处理继续（PROTECTIVE 也会兜住异常）。
                         XDFHook.loge(t, TAG, "topLevelRoute");
-                        return chain.proceed();
+                        return Boolean.FALSE;
                     }
                 });
         // 3) SubSettingLauncher.launch()：XDF 打开新 SubSettings 的统一出口。

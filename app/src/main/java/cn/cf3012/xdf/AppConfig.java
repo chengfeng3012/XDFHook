@@ -735,25 +735,21 @@ public final class AppConfig {
 
     /** 强制重读 */
     /**
-     * 读取当前配置。
+     * 读取当前配置（remote 优先，文件兜底）。
      *
-     * <p>★ 2026-10 根因修正：UI 进程<b>不能</b>用 remote preferences。<br>
-     * 实测（UI 进程 logcat 自检）：<br>
-     * {@code REMOTE SELFTEST EXCEPTION: java.lang.NoClassDefFoundError:
-     * Failed resolution of: Lio/github/libxposed/api/XposedModule;}<br>
-     * 原因：{@code api-102.0.0.jar} 在 build.gradle 是 {@code compileOnly}
-     * （官方要求，api 类由框架在 <b>hook 进程</b>注入），APK 里根本没有这些类
-     * （实测 APK 中 {@code Lio/github/libxposed/api/XposedModule} 命中 0）；
-     * 而模块 App 自己的 UI 进程不被 hook → 拿不到 api 类 →
-     * {@code RemotePreferences} 内部引用它时必抛 NoClassDefFoundError。
-     * <b>所以「XposedService BOUND + initRemote OK」是假象，写入会立刻炸。</b></p>
-     *
-     * <p>现策略按进程分道：</p>
+     * <p><b>通道结论（2026-10 两次实测，勿再用旧结论）</b>：</p>
      * <ul>
-     *   <li><b>UI 进程</b>：一律走 App 私有 filesDir 文件（不需 su、必定落盘）；
-     *       写完用 root 尽力同步一份到 {@link #PATH} 供 hook 进程读。</li>
-     *   <li><b>hook 进程</b>：remote preferences 可用（api 类已注入），
-     *       优先读 remote；读不到再读 {@link #PATH}。</li>
+     *   <li><b>remote preferences 是唯一真源，UI 与 hook 进程都优先走它</b>。
+     *       真机自检：UI 侧写入 + 读回均正常
+     *       （{@code SELFTEST write=true getString=true contains=true}），
+     *       所以「UI 进程不能用 remote、必须一律走私有文件」是<b>旧结论，已作废</b>。</li>
+     *   <li>UI 进程需注意的只是 {@code XposedInterface}/{@code api-102} 类不可用
+     *       （compileOnly，只注入 hook 进程）—— 这条约束由 {@link FileLogger}
+     *       的 {@code sUiProcess} 分支处理，与配置通道无关。</li>
+     *   <li><b>文件只在 remote 未就绪时兜底</b>：UI 进程读自己的私有 filesDir 文件，
+     *       hook 进程读 root 写的 {@link #PATH}（/data/local/tmp/XDFHook.cfg）。</li>
+     *   <li>UI 侧写完 remote 后会用 root <b>异步</b>同步一份到 {@link #PATH}
+     *       （见 {@code syncToHookPathViaRootAsync}），不再阻塞调用线程。</li>
      * </ul>
      */
     public static synchronized AppConfig refresh() {
@@ -1092,8 +1088,11 @@ public final class AppConfig {
         java.io.File ui = sUiFile;
         if (ui != null) {
             if (writePropsTo(ui, p)) {
-                // 顺带用 root 同步一份给 hook 进程读（失败不影响 UI 自身已落盘）
-                syncToHookPathViaRoot(p);
+                // 顺带用 root 同步一份给 hook 进程读（失败不影响 UI 自身已落盘）。
+                // ★ 必须异步：Root.exec 是 ProcessBuilder + waitFor(6s) 的阻塞调用，
+                //   而本方法由 UI 主线程（Compose 开关回调）直达 —— 同步 fork su
+                //   最坏会卡主线程 6s 直接 ANR（2026-10-17 review 修正）。
+                syncToHookPathViaRootAsync(p);
                 return true;
             }
             DebugProbe.log("writePropsDirect: UI private file write failed: " + ui);
@@ -1141,6 +1140,34 @@ public final class AppConfig {
             return true;
         } catch (Throwable t) {
             return false;
+        }
+    }
+
+    /**
+     * 异步版 root 同步：把阻塞式 fork su 挪出调用线程（UI 主线程安全）。
+     *
+     * <p>为什么必须异步：{@link #syncToHookPathViaRoot} 内部走 {@link Root#exec}
+     * （ProcessBuilder + waitFor(6s)），而 {@code setBoolean/setInt/setString}
+     * 由 UI 侧开关回调<b>在主线程同步调用</b>。remote 通道正常时不会走 legacy
+     * 路径；一旦 remote 不可用（正是「配置保存失败」那一类场景），同步 fork su
+     * 会让每次点开关都阻塞主线程最多 6 秒 → ANR。异步化后 UI 私有文件仍是
+     * 同步落盘（返回值不受影响），root 副本只是尽力而为。</p>
+     *
+     * <p>线程安全：{@code p} 是 writeLegacy 的局部变量，写入后主线程不再修改，
+     * 交给后台线程读取（{@code p.store}）无竞争。</p>
+     */
+    private static void syncToHookPathViaRootAsync(final Properties p) {
+        try {
+            Thread t = new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    syncToHookPathViaRoot(p);
+                }
+            }, "xdfhook-cfg-sync");
+            t.setDaemon(true);
+            t.start();
+        } catch (Throwable t) {
+            DebugProbe.log("sync cfg via root skipped: " + t);
         }
     }
 
@@ -1273,7 +1300,13 @@ public final class AppConfig {
             if (H_SPOOF_ENV.equals(hook)) return hUpdaterSpoofEnv;
             if (H_UPDATER_GUARD.equals(hook)) return hUpdaterGuard;
         }
-        return true;
+        // 未登记的 (scope, hook) 组合：默认【不启用】并留痕。
+        // 旧实现末尾是 `return true`（宽松放行）—— 任何常量拼错、或将来新增
+        // scope 忘了在本 switch 注册，都会静默按「已启用」处理（与预期相反，
+        // 且完全没有日志可查）。改为拒绝 + 诊断日志（2026-10-17 review）。
+        DebugProbe.log("hookEnabled: unknown pair scope=" + scope + " hook=" + hook
+                + " -> false (not registered)");
+        return false;
     }
 
     /** 获取整型配置值（UI 侧使用） */

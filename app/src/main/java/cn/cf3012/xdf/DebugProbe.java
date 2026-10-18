@@ -3,13 +3,18 @@ package cn.cf3012.xdf;
 import android.util.Log;
 
 /**
- * DebugProbe — 诊断探针（原先多路径落盘已废除）。
+ * DebugProbe — 诊断探针（无独立落盘）。
  *
- * 历史：项目初期日志方案尚未定型时，用最原始的 java.io 多路径
+ * 历史：项目初期日志方案未定型时用 java.io 多路径落盘
  * (xdfhook-debug.log @ /data/system、/data/local/tmp、/sdcard/Download)
- * 证明模块代码是否执行。现在日志已由 FileLogger 统一处理——
- * logcat + 广播上行 + 可配置式单文件落盘（默认 /sdcard/Android/XDFHook.log），
- * 本类不再做任何文件写操作，只保留 logcat 一行证据，API 兼容原位引用。
+ * 证明模块代码是否执行；后来一度改成「内存聚合 + 广播上行 + 单文件落盘」，
+ * 该方案因 uid1000 发非 protected 自定义广播 → AMS.checkBroadcastFromSystem
+ * → Slog.wtf → dropbox 高频写盘，把 system_server 拖到濒死，已被整体废除
+ * （见 FileLogger 头注释）。
+ *
+ * 现状：本类只做两件事 ——
+ *   ① 用固定 tag 直写 logcat（UI 进程唯一可靠出口，{@code adb logcat -s XDFHook.debug}）；
+ *   ② 转发给 FileLogger（hook 进程的 api.log 聚合通道）。
  */
 public final class DebugProbe {
 
@@ -18,7 +23,7 @@ public final class DebugProbe {
     private DebugProbe() {
     }
 
-    /** 保留兼容（不再用于落盘选路） */
+    /** 兼容保留：已无调用方（原用于落盘选路），保留以免破坏历史引用 */
     public static void setAppDir(java.io.File dir) {
     }
 

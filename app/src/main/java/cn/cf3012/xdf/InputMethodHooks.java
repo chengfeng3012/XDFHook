@@ -36,14 +36,19 @@ final class InputMethodHooks {
     // 输入法相关的 Settings 键
     private static final String KEY_DEFAULT_INPUT_METHOD = "default_input_method";
     private static final String KEY_ENABLED_INPUT_METHODS = "enabled_input_methods";
-    private static final String KEY_SELECTED_INPUT_METHOD = "selected_input_method";
+    /**
+     * 输入法子类型使用记录（中/英、手写…）。
+     * ★ 只参与黑名单判定；MODE_LOCK 下必须放行 —— 它的值恒不等于当前 IME
+     * 组件名，拦它等于把「输入法子类型切换」整个废掉（2026-10-17 review 修正）。
+     */
     private static final String KEY_INPUT_METHOD_SUBTYPE_HISTORY = "input_method_subtype_history";
 
     // 所有需要拦截的键（小写）
+    // 注：原实现还列了 "selected_input_method"，但 AOSP/A10 并不存在该键
+    // （真实键是 selected_input_method_subtype），属纯空转项，已移除。
     private static final Set<String> IME_KEYS = new HashSet<>(Arrays.asList(
             KEY_DEFAULT_INPUT_METHOD,
             KEY_ENABLED_INPUT_METHODS,
-            KEY_SELECTED_INPUT_METHOD,
             KEY_INPUT_METHOD_SUBTYPE_HISTORY
     ));
 
@@ -323,17 +328,34 @@ final class InputMethodHooks {
             //   - enabled_input_methods：系统输入法页正常增删 IME 时会写这个键，
             //     全拦会让新机（仅 3 个系统输入法）无法开关输入法，
             //     拦到关键写入还会导致 IME 直接弹不出来 → 放行。
+            //   - input_method_subtype_history：值是子类型使用记录，恒不等于当前
+            //     IME 组件名，拦它等于废掉「输入法子类型切换」→ 放行。
             //   - default/selected_input_method：值为「当前已生效的 IME」时放行
             //     （同值重写是无害的，且是 IME 自愈的必要路径）。
+            //   - ★ 读不到当前 IME（cur == null）时一律放行：宁可漏拦也不能把
+            //     输入法锁死。旧实现写成 value.equals(currentInputMethodId())，
+            //     读不到时返回 null → equals 恒 false → 全部被拦，与注释声明的
+            //     设计意图相反（2026-10-17 review 修正）。
             //   - 其余（真正要改掉输入法）才拦。
-            if (KEY_ENABLED_INPUT_METHODS.equalsIgnoreCase(key)) {
-                XDFHook.logd(TAG, "allow (lock mode passthrough) enabled_input_methods"
+            if (KEY_ENABLED_INPUT_METHODS.equalsIgnoreCase(key)
+                    || KEY_INPUT_METHOD_SUBTYPE_HISTORY.equalsIgnoreCase(key)) {
+                XDFHook.logd(TAG, "allow (lock mode passthrough) " + key
                         + " caller=" + caller + " value=" + value);
                 return chain.proceed();
             }
-            if (value.equals(currentInputMethodId())) {
-                XDFHook.logd(TAG, "allow (same value) " + table + ".putString key=" + key
-                        + " caller=" + caller);
+            // ③ 模块自身（UI 进程 cn.cf3012.xdf[:xxx]）的写入一律放行 —— 用于恢复
+            //    现场，避免「自己把自己锁死」。这是 MODE_LOCK 注释承诺的第 ③ 条，
+            //    旧实现漏了（2026-10-17 review 补齐）。
+            if (caller != null && (caller.equals("cn.cf3012.xdf")
+                    || caller.startsWith("cn.cf3012.xdf:"))) {
+                XDFHook.logd(TAG, "allow (module itself) " + table
+                        + ".putString key=" + key + " caller=" + caller);
+                return chain.proceed();
+            }
+            String cur = currentInputMethodId();
+            if (cur == null || value.equals(cur)) {
+                XDFHook.logd(TAG, "allow (lock mode, curIme=" + cur + ") " + table
+                        + ".putString key=" + key + " caller=" + caller);
                 return chain.proceed();
             }
             XDFHook.logw(TAG, "BLOCKED (lock mode) " + table + ".putString key=" + key
@@ -341,8 +363,8 @@ final class InputMethodHooks {
             return Boolean.FALSE; // putString 返回 boolean
         } else if (mode == MODE_BLACKLIST) {
             // 黑名单模式：检查 value 是否在黑名单中
-            // 对于 default_input_method 和 selected_input_method，value 是 component name
-            // 对于 enabled_input_methods，value 是逗号分隔的列表
+            // 对于 default_input_method，value 是 component name；
+            // 对于 enabled_input_methods，value 是逗号分隔的组件列表。
             if (isBlacklisted(value, cfg)) {
                 XDFHook.logw(TAG, "BLOCKED (blacklist) " + table + ".putString key=" + key
                         + " value=" + value + " caller=" + caller);

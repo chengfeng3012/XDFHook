@@ -299,19 +299,20 @@ final class LockScreenHooks {
                 new Class<?>[]{typeCls},
                 chain -> {
                     try {
-                        if (!enabled()) {
-                            return chain.proceed();
-                        }
                         Object result = chain.proceed();
-                        if (!Boolean.TRUE.equals(result)) {
+                        if (enabled() && !Boolean.TRUE.equals(result)) {
                             XDFHook.logd(TAG, "force isScreenLockVisible("
                                     + chain.getArg(0) + ") = true");
                             return Boolean.TRUE;
                         }
                         return result;
                     } catch (Throwable t) {
+                        // ★ 不再二次 chain.proceed()：LSPosed 的 VectorChain 不做
+                        //   proceed 结果缓存（每次调用都会重跑下游/原方法），
+                        //   在 catch 里再 proceed 等于把原方法执行第二遍。
+                        //   本 hook 的目标就是「强制可见」，异常时直接给 true。
                         XDFHook.loge(t, TAG, "isScreenLockVisible.after");
-                        return chain.proceed();
+                        return Boolean.TRUE;
                     }
                 },
                 "lockScreen.forceVisible");
@@ -364,8 +365,10 @@ final class LockScreenHooks {
                         }
                         return r;
                     } catch (Throwable t) {
+                        // ★ 不二次 proceed（同 hookVisibleFallback 的说明）；
+                        //   onResume 返回 void，给 null 即可。
                         XDFHook.loge(t, TAG, "lockPageEntry.onResume");
-                        return chain.proceed();
+                        return null;
                     }
                 });
         XDFHook.logi(TAG, "lock page entry armed (clones ROM row for 屏幕锁定)");
