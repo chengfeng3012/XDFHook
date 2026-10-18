@@ -19,42 +19,66 @@ import java.util.concurrent.ConcurrentHashMap;
  * ResolverAlwaysRestore — 恢复 ResolverActivity 被 ROM 阉割的
  * 「始终」按钮 + 修复「仅此一次」按钮空转。
  *
- * 【ROM 阉割的静态事实】（framework.apk 实测，对照 AOSP-G 10）
- *  1. ResolverActivity 删除了字段 mAlwaysButton，resetButtonBar() 里
- *     不再 findViewById(button_always)，setAlwaysButtonEnabled() 被掏空。
- *  2. onButtonClick(View) 被截断：算完 which / resolveInfoForPosition
- *     后直接 return-void，【删除了 startSelected 调用】——这是
- *     「仅此一次」按钮点了没反应的根因（XML 里 android:onClick=
- *     "onButtonClick" 仍生效，点击进得来，只是里面什么都不做）。
- *  3. 但支撑全在：startSelected(IZZ)V / showSettingsForSelected(ResolveInfo)
- *     完整未被改动；资源表里 button_always、activity_resolver_use_always
- *     ("Always")、activity_resolver_set_always 全部健在。
- *  4. 车机布局 res/layout-car-v8/car_resolver_list.xml 两个按钮都还在
- *     （button_once 在前、button_always 在后，onClick 同为 onButtonClick），
- *     证明 ROM 只是没在手机布局里放。
+ * <h3>★ 资源 id 映射（MT2 resource table 实测，勿再写反）</h3>
+ * <pre>
+ *   button_always = 0x010201EB
+ *   button_bar    = 0x010201EC
+ *   button_once   = 0x010201ED
+ * </pre>
  *
- * 【本类做法】（全部反射，不改 framework 签名）
- *  H1 onButtonClick before：完全接管，按 AOSP 原版语义重算并分派
- *     —— 「始终」+ 网页类布局 -> showSettingsForSelected(ri)
- *     —— 否则 startSelected(which, always, hasIndexBeenFiltered)
- *     一次补齐「仅此一次」和「始终」两个出口。
- *  H2 动态插入「始终」按钮：在 7 参 onCreate 之后（configureContentView
- *     已 setContentView + resetButtonBar）往 button_bar 插一个与
- *     button_once 同风格的 Button，并复制 button_once 的启用态。
+ * <h3>★ ROM 阉割的静态事实（XDF_framework.apk / android vc29，2026-10-18）</h3>
  *
- * 【MT2 实测补充（XDF_framework.apk, android vc29）】
- *  - mAlwaysButton 字段确实不存在；resetButtonBar() 只 findViewById
- *    button_bar(0x010201EB) + button_once(0x010201EC)。
- *  - setAlwaysButtonEnabled(ZIZ)V 存在但【零调用者】= 死代码，
- *    其 smali 里算出的 enabled 从未被使用（ROM 阉割痕迹）。
- *  - resetAlwaysOrOnceButtonBar()V 只被 resetButtonBar() 调用一次，
- *    故 always 按钮的 enabled 必须在【插入那一刻】从 button_once 复制。
- *  - 资源健在：button_always=0x010201EA、
- *    activity_resolver_use_always=0x0104005F("Always")。
+ * <ol>
+ *   <li><b>onButtonClick(View) 被截断</b>：算完 which / resolveInfoForPosition 后直接
+ *       {@code return-void}（.line 981），<b>删除了 startSelected / showSettingsForSelected</b>。
+ *       XML 里 {@code android:onClick="onButtonClick"} 仍生效（点击进得来，只是里面什么都不做）
+ *       —— 这是「仅此一次」按钮点了没反应的根因。支撑方法
+ *       {@code startSelected(IZZ)V} / {@code showSettingsForSelected(ResolveInfo)} 完整未改。</li>
+ *   <li><b>「始终」按钮：布局里本来就有，只是永远 disabled</b>
+ *       <ul>
+ *         <li>{@code res/layout/resolver_list.xml} 里 button_bar 内<b>两个按钮都在</b>：
+ *             button_once（0x…ED）与 <b>button_always（0x…EB，android:enabled="false"，
+ *             android:onClick="onButtonClick"）</b>。ROM 删的只是代码侧对它的引用。</li>
+ *         <li>字段 {@code mAlwaysButton} 不存在；{@code resetButtonBar()} 只
+ *             {@code findViewById(button_bar)} → {@code buttonLayout.findViewById(button_once)}
+ *             → {@code iput mOnceButton}，<b>全程不碰 button_always</b>。</li>
+ *         <li>{@code setAlwaysButtonEnabled(ZIZ)V} 的 dispatch xref = <b>0</b>（死代码）。</li>
+ *         <li>{@code ItemClickListener.onItemClick()} 里唯一的按钮更新是
+ *             {@code access$1100(this).setEnabled(valid)}，而 {@code access$1100} 的实现是
+ *             <b>{@code return this.mOnceButton;}</b> —— 只更新 once。</li>
+ *         <li>{@code resetAlwaysOrOnceButtonBar()} 也只 {@code mOnceButton.setEnabled(true)}（单向）。</li>
+ *       </ul>
+ *       ⇒ <b>按钮在，但永远是灰的、点不动</b>，且没有任何代码路径会打开它。</li>
+ * </ol>
  *
- * 注：刻意不碰 mSupportsAlwaysUseOption —— 它同时控制
- * onPrepareAdapterView 里的 setChoiceMode，改它会连带把列表点击
- * 语义从「直接启动」切成「勾选」。
+ * <h3>★ 旧实现的错误（用户反馈"显示没修好 + 点不了"）</h3>
+ * <ol>
+ *   <li><b>方向错</b>：旧实现「new 一个 Button 插进去」，而布局里<b>已经有</b>该按钮。
+ *       更糟的是它第一句就是幂等检查
+ *       {@code if (bar.findViewById(alwaysId) != null) return;} —— 布局里存在 ⇒
+ *       <b>立刻 return，后面一行都没执行过</b>（复制 enabled / 绑 listener / 插入全没跑），
+ *       所以界面上那个"始终"始终是 ROM 原生那个 disabled 按钮。</li>
+ *   <li><b>enabled 只同步一次</b>：即使插入成功，也只在 onCreate 复制一次 once 的 enabled；
+ *       而 ROM 之后只会更新 mOnceButton ⇒ 按钮永远停在初始（disabled）状态。</li>
+ *   <li>附带：插入分支用 {@code new ViewGroup.LayoutParams(srcLp)} 会丢掉 LinearLayout
+ *       的 weight（若源宽度为 0dp 则按钮宽度变 0）。</li>
+ * </ol>
+ *
+ * <h3>★ 现方案</h3>
+ * <ul>
+ *   <li><b>H1</b> {@code onButtonClick} before 完全接管：按 AOSP 原版语义重算并分派
+ *       once/always（含网页类 {@code showSettingsForSelected} 分支）。
+ *       修复「仅此一次」空转，同时让「始终」按钮的点击天然生效
+ *       （XML 的 onClick 会走进这里）。</li>
+ *   <li><b>H2</b> 接管布局里已有的 button_always（没有才插入，且用
+ *       {@code LinearLayout.LayoutParams} 完整复制），并让它的 enabled 跟随
+ *       mOnceButton —— 同步点取 ROM <b>唯二</b>会更新按钮状态的时机：
+ *       {@code ItemClickListener.onItemClick} 与 {@code resetAlwaysOrOnceButtonBar}。</li>
+ * </ul>
+ *
+ * <p>注：刻意不碰 {@code mSupportsAlwaysUseOption} —— 它同时控制
+ * {@code onPrepareAdapterView} 里的 setChoiceMode，改它会连带把列表点击语义
+ * 从「直接启动」切成「勾选」。</p>
  */
 final class ResolverAlwaysRestore {
 
@@ -62,11 +86,11 @@ final class ResolverAlwaysRestore {
 
     /** 同一进程内防重复注册 */
     private static final Set<ClassLoader> sHooked =
-            Collections.newSetFromMap(new ConcurrentHashMap<>());
+            Collections.newSetFromMap(new ConcurrentHashMap<ClassLoader, Boolean>());
 
     /**
-     * 资源名 —— 按名字解析，规避 framework-res 各版本 id 漂移
-     * （XDF 0x10201ea vs AOSP-G 0x10201eb，务必不要硬编码）。
+     * 资源名 —— 按名字解析，规避 framework-res 各版本 id 漂移。
+     * 实测 XDF：button_always=0x010201EB / button_bar=0x010201EC / button_once=0x010201ED。
      */
     private static final String ID_BUTTON_ALWAYS = "button_always";
     private static final String ID_BUTTON_ONCE = "button_once";
@@ -87,9 +111,9 @@ final class ResolverAlwaysRestore {
             XDFHook.loge(t, TAG, "onButtonClick dispatch");
         }
         try {
-            hookInsertAlwaysButton(cl);
+            hookAlwaysButton(cl);
         } catch (Throwable t) {
-            XDFHook.loge(t, TAG, "insert always button");
+            XDFHook.loge(t, TAG, "always button takeover");
         }
     }
 
@@ -97,18 +121,19 @@ final class ResolverAlwaysRestore {
 
     /**
      * 恢复 AOSP 原版 onButtonClick 语义：
+     * <pre>
      *   int which = hasFilteredItem ? getFilteredPosition()
      *                               : mAdapterView.getCheckedItemPosition();
      *   boolean hasIndexBeenFiltered = !hasFilteredItem;
      *   ResolveInfo ri = resolveInfoForPosition(which, hasIndexBeenFiltered);
-     *   if (mUseLayoutForBrowsables && !ri.handleAllWebDataURI
-     *           && id == R.id.button_always) {
+     *   if (mUseLayoutForBrowsables &amp;&amp; !ri.handleAllWebDataURI
+     *           &amp;&amp; id == R.id.button_always) {
      *       showSettingsForSelected(ri);      // 网页类：跳浏览器默认设置
      *       return;
      *   }
      *   boolean always = (id == R.id.button_always);
      *   startSelected(which, always, hasIndexBeenFiltered);
-     *
+     * </pre>
      * ROM 把后半段全删了。before 完全接管重建；失败回退 proceed()
      * （= ROM 当前空转行为，不会引入更糟的故障）。
      */
@@ -116,6 +141,7 @@ final class ResolverAlwaysRestore {
         Class<?> resolver = Reflect.findClass("com.android.internal.app.ResolverActivity", cl);
         Method m = Reflect.findDeclared(resolver, "onButtonClick", new Class<?>[]{View.class});
         m.setAccessible(true);
+        XDFHook.deopt(m);
         XDFHook.hook(m, chain -> {
             try {
                 Object vObj = chain.getArg(0);
@@ -190,78 +216,103 @@ final class ResolverAlwaysRestore {
         XDFHook.logi(TAG, "hooked: ResolverActivity.onButtonClick (once+always dispatch)");
     }
 
-    /* ==================== H2: 动态插入「始终」按钮 ==================== */
+    /* ==================== H2: 接管「始终」按钮 + enabled 同步 ==================== */
 
-    /**
-     * 钩 7 参 onCreate(Bundle,Intent,CharSequence,int,Intent[],List,boolean) 之后，
-     * 往 button_bar 插入「始终」按钮。configureContentView 在其内部已
-     * setContentView + resetButtonBar，故此刻 view 树已就绪，
-     * 且 mOnceButton 的 enabled 态已被 ROM 的 resetAlwaysOrOnceButtonBar 决定。
-     */
-    private static void hookInsertAlwaysButton(ClassLoader cl) throws Exception {
+    private static void hookAlwaysButton(ClassLoader cl) throws Exception {
         Class<?> resolver = Reflect.findClass("com.android.internal.app.ResolverActivity", cl);
-        Method m = Reflect.findDeclared(resolver, "onCreate", new Class<?>[]{
+
+        // (a) onCreate(7参) after —— 此时 configureContentView/resetButtonBar 已跑完
+        Method onCreate = Reflect.findDeclared(resolver, "onCreate", new Class<?>[]{
                 android.os.Bundle.class, Intent.class, CharSequence.class, int.class,
                 Intent[].class, java.util.List.class, boolean.class});
-        m.setAccessible(true);
-        XDFHook.hook(m, chain -> {
+        onCreate.setAccessible(true);
+        XDFHook.hook(onCreate, chain -> {
             Object r = chain.proceed();
             try {
                 Object thiz = chain.getThisObject();
-                // thiz 是 Activity（Context），不是 View —— 用 Activity.findViewById
                 if (thiz instanceof android.app.Activity) {
-                    insertAlwaysButton((android.app.Activity) thiz);
+                    ensureAlwaysButton((android.app.Activity) thiz);
                 }
             } catch (Throwable t) {
-                XDFHook.loge(t, TAG, "insert always button");
+                XDFHook.loge(t, TAG, "ensure always button");
             }
             return r;
         });
-        XDFHook.logi(TAG, "hooked: ResolverActivity.onCreate (insert always button)");
+        XDFHook.logi(TAG, "hooked: ResolverActivity.onCreate (ensure always button)");
+
+        // (b) 同步点 1 —— 列表项点击（ROM 在这里更新 mOnceButton）
+        try {
+            Class<?> icl = Reflect.findClass(
+                    "com.android.internal.app.ResolverActivity$ItemClickListener", cl);
+            Method m = Reflect.findDeclared(icl, "onItemClick", new Class<?>[]{
+                    android.widget.AdapterView.class, View.class, int.class, long.class});
+            m.setAccessible(true);
+            XDFHook.hook(m, chain -> {
+                Object r = chain.proceed();
+                syncAlwaysEnabled(chain.getThisObject());   // ItemClickListener
+                return r;
+            });
+            XDFHook.logi(TAG, "hooked: ItemClickListener.onItemClick (always-enabled sync)");
+        } catch (Throwable t) {
+            XDFHook.logw(TAG, "ItemClickListener.onItemClick skipped: " + t);
+        }
+
+        // (c) 同步点 2 —— resetAlwaysOrOnceButtonBar（resetButtonBar 内，onCreate/onRestart）
+        try {
+            Method m = Reflect.findDeclared(resolver, "resetAlwaysOrOnceButtonBar",
+                    new Class<?>[0]);
+            m.setAccessible(true);
+            XDFHook.hook(m, chain -> {
+                Object r = chain.proceed();
+                syncAlwaysEnabled(chain.getThisObject());   // ResolverActivity
+                return r;
+            });
+            XDFHook.logi(TAG, "hooked: resetAlwaysOrOnceButtonBar (always-enabled sync)");
+        } catch (Throwable t) {
+            XDFHook.logw(TAG, "resetAlwaysOrOnceButtonBar skipped: " + t);
+        }
     }
 
     /**
-     * 在 button_bar 中插入「始终」按钮。幂等：已存在则跳过。
-     * 复用 button_once 的 LayoutParams，保证与「仅此一次」视觉一致。
+     * 确保「始终」按钮可用。
      *
-     * 【启用态】不能写死 false：XDF 的 setAlwaysButtonEnabled(ZIZ)V 虽存在，
-     * 但 MT2 xref 实测【零调用者】（死代码），而 resetAlwaysOrOnceButtonBar()
-     * 只在 resetButtonBar() 里被调一次 —— 即 configureContentView 期间，
-     * 早于本方法。故没有任何后续流程会再改 always 按钮的 enabled。
-     * 手机布局 resolver_list.xml 中 button_once 本身就带
-     * android:enabled="false"，由 ROM 在开屏时按
-     * (useLayoutWithDefault && filteredPos!=-1) || (adapterView.checked!=-1)
-     * 打开。此刻直接【复制 button_once 的 enabled 态】，
-     * 即精确等价于 AOSP 的 hasValidSelection 语义。
+     * <p>本 ROM：布局里已有 button_always ⇒ <b>直接接管，绝不重复插入</b>
+     * （旧实现正是在这里被幂等检查短路、一行没跑）。</p>
+     * <p>其它 ROM 变体：布局里没有才插入，并用 {@link LinearLayout.LayoutParams} 完整复制
+     * 布局参数（{@code ViewGroup.LayoutParams} 的拷贝构造会丢掉 weight）。</p>
      */
-    private static void insertAlwaysButton(android.app.Activity act) {
-        // 分享面板 ChooserActivity 继承 ResolverActivity，但用的是 chooser 布局，
-        // 不该出现 always/once 按钮条；类名命中则跳过。
+    private static void ensureAlwaysButton(android.app.Activity act) {
+        // 分享面板 ChooserActivity 继承 ResolverActivity，但用 chooser 布局、没有 button_bar
         if (act.getClass().getName().contains("ChooserActivity")) {
             return;
         }
         int barId = resId(act, ID_BUTTON_BAR, "id");
         if (barId == 0) {
-            XDFHook.logd(TAG, "insert: button_bar id not resolved");
+            XDFHook.logd(TAG, "always: button_bar id not resolved");
             return;
         }
         View barView = act.findViewById(barId);
         if (!(barView instanceof LinearLayout)) {
-            XDFHook.logd(TAG, "insert: button_bar not a LinearLayout");
+            XDFHook.logd(TAG, "always: button_bar is not a LinearLayout");
             return;
         }
         LinearLayout bar = (LinearLayout) barView;
 
         int alwaysId = resId(act, ID_BUTTON_ALWAYS, "id");
         if (alwaysId == 0) {
-            XDFHook.logw(TAG, "insert: button_always id not found in resources");
+            XDFHook.logw(TAG, "always: button_always id not resolved");
             return;
         }
-        if (bar.findViewById(alwaysId) != null) {
-            return;     // 幂等
+
+        // ---- ① 布局里已有该按钮（XDF 本机就是这种）→ 接管即可 ----
+        View existing = bar.findViewById(alwaysId);
+        if (existing instanceof Button) {
+            syncAlwaysEnabled(act);
+            XDFHook.logi(TAG, "always button: reused ROM built-in button (no insert)");
+            return;
         }
 
-        // 先取 button_once：布局参数 + 启用态都以它为基准
+        // ---- ② 布局里没有 → 插入（修掉旧实现的 LayoutParams 丢 weight 问题）----
         int onceId = resId(act, ID_BUTTON_ONCE, "id");
         View once = onceId != 0 ? bar.findViewById(onceId) : null;
 
@@ -274,20 +325,7 @@ final class ResolverAlwaysRestore {
         if (textId != 0) {
             btn.setText(textId);
         }
-        // 关键：跟随 button_once 当前启用态（= ROM 刚判定的 hasSelection）
-        boolean enabled = (once != null) ? once.isEnabled() : true;
-        btn.setEnabled(enabled);
-
-        // 复制 button_once 的布局参数（间距/minHeight/gravity），但不共用同一实例
-        ViewGroup.LayoutParams srcLp = (once != null) ? once.getLayoutParams() : null;
-        if (srcLp != null) {
-            bar.addView(btn, new ViewGroup.LayoutParams(srcLp));
-        } else {
-            bar.addView(btn, new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        }
-
-        // 点击 -> 走 onButtonClick 的同一套分派语义
+        btn.setEnabled(once != null && once.isEnabled());
         btn.setOnClickListener(v -> {
             try {
                 dispatchOnButtonClick(act, v);
@@ -295,17 +333,72 @@ final class ResolverAlwaysRestore {
                 XDFHook.loge(t, TAG, "always button click");
             }
         });
-        XDFHook.logi(TAG, "insert: always button added (id=" + alwaysId
-                + ", enabled=" + enabled + ")");
+
+        ViewGroup.LayoutParams lp = (once != null) ? once.getLayoutParams() : null;
+        LinearLayout.LayoutParams newLp;
+        if (lp instanceof LinearLayout.LayoutParams) {
+            // ★ 完整复制（含 weight/margins/gravity），不要用 ViewGroup.LayoutParams 的拷贝构造
+            newLp = new LinearLayout.LayoutParams((LinearLayout.LayoutParams) lp);
+        } else if (lp != null) {
+            newLp = new LinearLayout.LayoutParams(lp.width, lp.height);
+        } else {
+            newLp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        }
+        bar.addView(btn, newLp);
+        XDFHook.logi(TAG, "always button: inserted (id=0x" + Integer.toHexString(alwaysId)
+                + ", weight=" + newLp.weight + ", enabled=" + btn.isEnabled() + ")");
+    }
+
+    /**
+     * 把「始终」按钮的 enabled 同步为「仅此一次」的状态。
+     *
+     * <p>ROM 只维护 {@code mOnceButton}（{@code access$1100} 的实现就是 return mOnceButton），
+     * 所以我们的按钮必须自己跟随它 —— 同步点即 ROM 唯二会更新按钮状态的时机。</p>
+     *
+     * @param fromActivityOrListener ResolverActivity，或 ItemClickListener（内部先取 this$0）
+     */
+    private static void syncAlwaysEnabled(Object fromActivityOrListener) {
+        try {
+            Object act = fromActivityOrListener;
+            if (!(act instanceof android.app.Activity)) {
+                act = Reflect.getField(fromActivityOrListener, "this$0");
+            }
+            if (!(act instanceof android.app.Activity)) {
+                return;
+            }
+            android.app.Activity a = (android.app.Activity) act;
+
+            int barId = resId(a, ID_BUTTON_BAR, "id");
+            int onceId = resId(a, ID_BUTTON_ONCE, "id");
+            int alwaysId = resId(a, ID_BUTTON_ALWAYS, "id");
+            if (barId == 0 || onceId == 0 || alwaysId == 0) {
+                return;
+            }
+            View bar = a.findViewById(barId);
+            if (!(bar instanceof ViewGroup)) {
+                return;
+            }
+            View once = ((ViewGroup) bar).findViewById(onceId);
+            View always = ((ViewGroup) bar).findViewById(alwaysId);
+            if (once == null || always == null) {
+                return;
+            }
+            boolean want = once.isEnabled();
+            if (always.isEnabled() != want) {
+                always.setEnabled(want);
+                XDFHook.logd(TAG, "always.enabled -> " + want + " (follow once)");
+            }
+        } catch (Throwable t) {
+            XDFHook.logd(TAG, "syncAlwaysEnabled skipped: " + t);
+        }
     }
 
     /* ==================== always 按钮点击复用分派 ==================== */
 
     /**
-     * always 按钮 onClick 复用 onButtonClick 分派。
-     * 注意：这里直接反射调用【原始】onButtonClick 会被 H1 再次拦截，
-     * 属于预期——H1 会识别 isAlways=true 并走 startSelected(always=true)
-     * 或 showSettingsForSelected 分支。
+     * always 按钮 onClick 复用 onButtonClick 分派（仅"布局里没有该按钮、由我们插入"
+     * 的 ROM 变体用到；本 ROM 走 XML 的 android:onClick，同样落到 H1）。
      */
     private static void dispatchOnButtonClick(Object thiz, View v) throws Exception {
         Method m = Reflect.findDeclared(thiz.getClass(), "onButtonClick",
