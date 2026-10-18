@@ -32,9 +32,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import cn.cf3012.xdf.AppConfig
+import cn.cf3012.xdf.DeviceGate
 import cn.cf3012.xdf.R
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.preference.ArrowPreference
+import top.yukonga.miuix.kmp.preference.SwitchPreference
 
 private val LEVEL_NAMES = listOf(
     R.string.level_v,
@@ -76,6 +78,7 @@ fun SettingsScreen(tick: Int, context: Context) {
     var cfgTick by remember { mutableStateOf(tick) }
     val cfg = remember(cfgTick) { AppConfig.refresh() }
     var dialog by remember { mutableStateOf<LogDialog?>(null) }
+    var gateDetail by remember { mutableStateOf<DeviceGate.Info?>(null) }
     var about by remember { mutableStateOf(false) }
     var updateState by remember { mutableStateOf<UpdateState?>(null) }
     var busy by remember { mutableStateOf<BusyState?>(null) }
@@ -133,6 +136,29 @@ fun SettingsScreen(tick: Int, context: Context) {
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 8.dp),
     ) {
+        // ---- 设备校验（注入门禁，见 DeviceGate）----
+        // 放在最前：这是「模块到底有没有在工作」的第一现场。
+        item { SmallTitle(text = "设备校验") }
+        item {
+            val gate = remember(cfgTick) { DeviceGate.info() }
+            ArrowPreference(
+                title = "当前设备",
+                summary = gate.describe() +
+                    if (gate.allowed(cfg.forceUnknownDevice)) "　· 门禁已通过"
+                    else "　· 门禁未通过（已停止注入）",
+                onClick = { gateDetail = DeviceGate.info() },
+            )
+        }
+        item {
+            SwitchPreference(
+                checked = cfg.forceUnknownDevice,
+                onCheckedChange = { setOr(AppConfig.K_FORCE_DEVICE, it) },
+                title = "强制注入（无视设备校验）",
+                summary = "非 XDF-N1 机型默认不注入；仅在清楚风险时开启。" +
+                    "Android 版本不符时本开关无效（硬门禁）",
+            )
+        }
+
         item { SmallTitle(text = stringResource(R.string.opt_log_level)) }
         item {
             val levelNameRes = LEVEL_NAMES.getOrNull(
@@ -202,6 +228,58 @@ fun SettingsScreen(tick: Int, context: Context) {
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
             )
         }
+    }
+
+    gateDetail?.let { g ->
+        AlertDialog(
+            onDismissRequest = { gateDetail = null },
+            title = { Text("设备校验详情") },
+            text = {
+                Column {
+                    Text(
+                        text = "Android：" + g.androidRelease + " (API " + g.sdkInt + ")",
+                        fontSize = 13.sp,
+                    )
+                    Text(
+                        text = "要求：Android 10 (API 29)" +
+                            if (g.sdkOk) "　✓" else "　✗",
+                        fontSize = 12.sp,
+                        color = androidx.compose.ui.graphics.Color(0xFF8A8A8E),
+                    )
+                    Text(
+                        text = "型号候选来源：",
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(top = 10.dp),
+                    )
+                    g.modelSources.forEach { s ->
+                        Text(text = "· $s", fontSize = 12.sp)
+                    }
+                    Text(
+                        text = "判定：以 XDF-N1 开头即通过" +
+                            if (g.modelOk) "　✓" else "　✗",
+                        fontSize = 12.sp,
+                        color = androidx.compose.ui.graphics.Color(0xFF8A8A8E),
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                    Text(
+                        text = "当前结果：" + if (g.allowed(cfg.forceUnknownDevice)) {
+                            "通过，允许注入"
+                        } else {
+                            "未通过，不注入" + (if (!g.sdkOk) "（版本硬门禁，不可绕过）"
+                            else "（可在上方开关强制）")
+                        },
+                        fontSize = 13.sp,
+                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                        modifier = Modifier.padding(top = 10.dp),
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { gateDetail = null }) {
+                    Text(stringResource(android.R.string.ok))
+                }
+            },
+        )
     }
 
     when (val d = dialog) {

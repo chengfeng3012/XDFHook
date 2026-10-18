@@ -110,6 +110,15 @@ public class XDFHook extends XposedModule {
         FileLogger.hookInit(param.getProcessName(), param.isSystemServer());
         DebugProbe.log("onModuleLoaded: entry invoked, process=" + param.getProcessName()
                 + ", isSystemServer=" + param.isSystemServer());
+        // 设备门禁探测：每个进程最早打一次，便于事后核对「为什么没注入」
+        try {
+            DeviceGate.Info di = DeviceGate.info();
+            logi(TAG, "device gate: " + di.describe()
+                    + " sdkOk=" + di.sdkOk + " modelOk=" + di.modelOk
+                    + " sources=[" + String.join(" | ", di.modelSources) + "]");
+        } catch (Throwable t) {
+            loge(t, TAG, "device gate probe");
+        }
         // 框架能力位诊断：PROP_CAP_SYSTEM 决定本模块能否 hook system_server。
         // （本机 2.1.1/2.2.0 上模块能进普通 app 作用域却进不了 system_server，
         //    这个值能一次性区分「框架没给能力」与「给了但没派发」。）
@@ -188,6 +197,10 @@ public class XDFHook extends XposedModule {
             logw(TAG, "master off, skip all system_server hooks");
             return;
         }
+        // ★ 设备门禁：不通过则一个 hook 都不装（见 DeviceGate / shouldInject）
+        if (!shouldInject(cfg, "system_server")) {
+            return;
+        }
         if (cfg.hSystemUnlockControl) {
             try {
                 ZeusUnlocker.hookSystemServer(param.getClassLoader());
@@ -260,6 +273,10 @@ public class XDFHook extends XposedModule {
         final AppConfig cfg = AppConfig.refresh();
         if (!cfg.master) {
             logw(TAG, "master off, skip hooks for " + pkg);
+            return;
+        }
+        // ★ 设备门禁：不通过则本进程一个 hook 都不装（见 DeviceGate / shouldInject）
+        if (!shouldInject(cfg, pkg)) {
             return;
         }
 
@@ -486,6 +503,44 @@ public class XDFHook extends XposedModule {
             });
         }
 
+    }
+
+    /**
+     * 设备门禁：决定本进程是否允许安装 hook（{@link DeviceGate}）。
+     *
+     * <p>规则：</p>
+     * <ul>
+     *   <li><b>Android 版本不符</b>（非 API 29）：硬拒绝，**没有任何开关可绕过**。</li>
+     *   <li><b>机型不是 XDF-N1</b>：默认拒绝；只有用户在 App 里主动打开
+     *       「强制注入（无视设备校验）」（{@link AppConfig#K_FORCE_DEVICE}）才继续，
+     *       并在日志里显著标记。</li>
+     * </ul>
+     *
+     * <p>★ 必须在任何 hook 安装之前调用 —— 不通过就一个都不装，
+     * 避免把针对 XDF-N1 的方法假设套到别的设备上（轻则无效，重则崩宿主，
+     * system_server 尤其致命）。</p>
+     *
+     * @param where 调用点标识（日志用，如 system_server / 包名）
+     * @return true = 允许注入
+     */
+    private static boolean shouldInject(AppConfig cfg, String where) {
+        DeviceGate.Info gate;
+        try {
+            gate = DeviceGate.info();
+        } catch (Throwable t) {
+            loge(t, TAG, "device gate check");
+            return false;   // 探测失败时保守拒绝
+        }
+        String blocked = gate.blockedReason(cfg.forceUnknownDevice);
+        if (blocked != null) {
+            logw(TAG, "device gate BLOCKED [" + where + "]: " + blocked + " —— 不安装任何 hook");
+            return false;
+        }
+        if (!gate.modelOk) {
+            logw(TAG, "device gate 强制注入已开启，在非 XDF-N1 机型(" + gate.modelsText()
+                    + ")上继续 [" + where + "]");
+        }
+        return true;
     }
 
     /** 运行一段 hook 安装逻辑，异常只记日志，绝不影响宿主 */

@@ -146,6 +146,15 @@ public final class AppConfig {
     /** Zeus 设备信息冒充：仅影响 zeus 读取到的 model/sn */
     public static final String K_ZEUS_MODEL = "zeus_model";
     public static final String K_ZEUS_SN = "zeus_sn";
+    /**
+     * 强制注入（无视设备门禁的型号校验）。
+     *
+     * <p>全局键（不属于任何 scope）。默认 false = 非 XDF-N1 机型<b>拒绝注入</b>；
+     * 用户在 App 里主动打开后才继续。<b>不能</b>绕过 Android 版本硬门禁。</p>
+     *
+     * <p>见 {@link DeviceGate}。</p>
+     */
+    public static final String K_FORCE_DEVICE = "force_unknown_device";
     /** QS 修复：目标列数（1-6） */
     public static final String K_QS_COLUMNS = "qs_columns";
     /** QS 修复：目标最大行数（1-3） */
@@ -167,6 +176,9 @@ public final class AppConfig {
     // framework api.log()，无需路径/上限配置。
 
     public boolean master = true;
+
+    /** 强制注入：无视设备门禁的型号校验（Android 版本硬门禁不可绕过）。见 DeviceGate */
+    public boolean forceUnknownDevice = false;
 
     // ---- per-scope hook 单元开关（全部读出，各进程按需取用） ----
     // system
@@ -781,6 +793,7 @@ public final class AppConfig {
         AppConfig c = new AppConfig();
         try {
             c.master = p.getBoolean(K_MASTER, true);
+            c.forceUnknownDevice = p.getBoolean(K_FORCE_DEVICE, false);
             // system
             c.hSystemUnlockControl = p.getBoolean(hookKey(SCOPE_SYSTEM, H_UNLOCK_CTRL), true);
             c.hSystemHomeUnlock = p.getBoolean(hookKey(SCOPE_SYSTEM, H_HOME_UNLOCK), true);
@@ -988,6 +1001,7 @@ public final class AppConfig {
                 p = loadProps(new File(PATH));
             }
             c.master = getP(p, K_MASTER, true);
+            c.forceUnknownDevice = getP(p, K_FORCE_DEVICE, false);
             c.hSystemUnlockControl = getP(p, hookKey(SCOPE_SYSTEM, H_UNLOCK_CTRL), true);
             c.hSystemHomeUnlock = getP(p, hookKey(SCOPE_SYSTEM, H_HOME_UNLOCK), true);
             c.hSystemImeGuard = getP(p, hookKey(SCOPE_SYSTEM, H_IME_GUARD), false);
