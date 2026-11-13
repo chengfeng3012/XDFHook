@@ -19,12 +19,16 @@ import java.util.concurrent.ConcurrentHashMap;
  * ResolverAlwaysRestore — 恢复 ResolverActivity 被 ROM 阉割的
  * 「始终」按钮 + 修复「仅此一次」按钮空转。
  *
- * <h3>★ 资源 id 映射（MT2 resource table 实测，勿再写反）</h3>
+ * <h3>★ 资源 id 映射（设备真实 {@code /system/framework/framework-res.apk} 实测）</h3>
  * <pre>
- *   button_always = 0x010201EB
- *   button_bar    = 0x010201EC
- *   button_once   = 0x010201ED
+ *   button_always = 0x010201EA
+ *   button_bar    = 0x010201EB
+ *   button_once   = 0x010201EC
  * </pre>
+ * <p>★ 不要用 {@code XDF_framework.apk}（用户自行封装的样本）在 MT2 里查到的
+ * EB/EC/ED —— 那套比设备真实值整体 <b>+1</b>（样本资源表与设备不一致）。
+ * 自证：{@code resetButtonBar()} 用 {@code 0x10201eb} 找 <b>ViewGroup</b>(button_bar)、
+ * 用 {@code 0x10201ec} 找 <b>Button</b>(button_once)，只有 EB/EC 这套才自洽。</p>
  *
  * <h3>★ ROM 阉割的静态事实（XDF_framework.apk / android vc29，2026-10-18）</h3>
  *
@@ -34,11 +38,11 @@ import java.util.concurrent.ConcurrentHashMap;
  *       XML 里 {@code android:onClick="onButtonClick"} 仍生效（点击进得来，只是里面什么都不做）
  *       —— 这是「仅此一次」按钮点了没反应的根因。支撑方法
  *       {@code startSelected(IZZ)V} / {@code showSettingsForSelected(ResolveInfo)} 完整未改。</li>
- *   <li><b>「始终」按钮：布局里本来就有，只是永远 disabled</b>
+ *   <li><b>「始终」按钮：ROM 把整个 View 删掉了</b>
  *       <ul>
- *         <li>{@code res/layout/resolver_list.xml} 里 button_bar 内<b>两个按钮都在</b>：
- *             button_once（0x…ED）与 <b>button_always（0x…EB，android:enabled="false"，
- *             android:onClick="onButtonClick"）</b>。ROM 删的只是代码侧对它的引用。</li>
+ *         <li>设备真实 {@code res/layout/resolver_list.xml}（fw_dev.apk 实测）：button_bar
+ *             （0x010201EB）里<b>只有 button_once（0x010201EC）</b>，
+ *             <b>完全没有 button_always</b>。</li>
  *         <li>字段 {@code mAlwaysButton} 不存在；{@code resetButtonBar()} 只
  *             {@code findViewById(button_bar)} → {@code buttonLayout.findViewById(button_once)}
  *             → {@code iput mOnceButton}，<b>全程不碰 button_always</b>。</li>
@@ -53,15 +57,14 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <h3>★ 旧实现的错误（用户反馈"显示没修好 + 点不了"）</h3>
  * <ol>
- *   <li><b>方向错</b>：旧实现「new 一个 Button 插进去」，而布局里<b>已经有</b>该按钮。
- *       更糟的是它第一句就是幂等检查
- *       {@code if (bar.findViewById(alwaysId) != null) return;} —— 布局里存在 ⇒
- *       <b>立刻 return，后面一行都没执行过</b>（复制 enabled / 绑 listener / 插入全没跑），
- *       所以界面上那个"始终"始终是 ROM 原生那个 disabled 按钮。</li>
- *   <li><b>enabled 只同步一次</b>：即使插入成功，也只在 onCreate 复制一次 once 的 enabled；
- *       而 ROM 之后只会更新 mOnceButton ⇒ 按钮永远停在初始（disabled）状态。</li>
- *   <li>附带：插入分支用 {@code new ViewGroup.LayoutParams(srcLp)} 会丢掉 LinearLayout
- *       的 weight（若源宽度为 0dp 则按钮宽度变 0）。</li>
+ *   <li><b>enabled 只同步一次</b>：旧实现只在 onCreate 复制一次 once 的 enabled；而 ROM
+ *       之后只会更新 mOnceButton（{@code access$1100} 的实现就是 return mOnceButton），
+ *       我们的按钮没有任何代码路径会 enable ⇒ 永远停在初始 disabled（"点不了"）。</li>
+ *   <li><b>样式不对</b>：{@code new Button(act)} 用默认样式，而 button_once 用的是
+ *       {@code ?android:attr/buttonBarButtonStyle} ⇒ 观感不一致
+ *       （用户实测："看着和仅此一次的 style 不一样"）。</li>
+ *   <li>附带：插入时用 {@code new ViewGroup.LayoutParams(srcLp)} 会丢掉 LinearLayout 的
+ *       weight / gravity（若源宽度为 0dp，按钮宽度直接变 0）。</li>
  * </ol>
  *
  * <h3>★ 现方案</h3>
@@ -274,12 +277,20 @@ final class ResolverAlwaysRestore {
     }
 
     /**
-     * 确保「始终」按钮可用。
+     * 确保「始终」按钮存在且可用。
      *
-     * <p>本 ROM：布局里已有 button_always ⇒ <b>直接接管，绝不重复插入</b>
-     * （旧实现正是在这里被幂等检查短路、一行没跑）。</p>
-     * <p>其它 ROM 变体：布局里没有才插入，并用 {@link LinearLayout.LayoutParams} 完整复制
-     * 布局参数（{@code ViewGroup.LayoutParams} 的拷贝构造会丢掉 weight）。</p>
+     * <p><b>本 ROM 实测（设备真实 fw_dev.apk 的 res/layout/resolver_list.xml）</b>：
+     * button_bar 里<b>只有 button_once 一个 Button</b> —— ROM 把 button_always 的
+     * <b>整棵 View 删掉了</b>（不是只删代码引用），所以必须自己插入。</p>
+     *
+     * <p>插入时两个细节决定观感与可用性：</p>
+     * <ul>
+     *   <li><b>样式</b>：必须沿用 button_once 的 {@code ?android:attr/buttonBarButtonStyle}。
+     *       直接用 {@code new Button(act)} 的默认样式会让它"看着和仅此一次不一样"
+     *       （上一版就是这样，用户实测指出）。</li>
+     *   <li><b>布局参数</b>：用 {@link LinearLayout.LayoutParams} 的拷贝构造完整复制
+     *       （{@code ViewGroup.LayoutParams} 的拷贝构造会丢掉 weight / gravity）。</li>
+     * </ul>
      */
     private static void ensureAlwaysButton(android.app.Activity act) {
         // 分享面板 ChooserActivity 继承 ResolverActivity，但用 chooser 布局、没有 button_bar
@@ -304,11 +315,11 @@ final class ResolverAlwaysRestore {
             return;
         }
 
-        // ---- ① 布局里已有该按钮（XDF 本机就是这种）→ 接管即可 ----
+        // ---- ① 某些 ROM 变体保留了该按钮 → 直接接管，不重复插入 ----
         View existing = bar.findViewById(alwaysId);
         if (existing instanceof Button) {
             syncAlwaysEnabled(act);
-            XDFHook.logi(TAG, "always button: reused ROM built-in button (no insert)");
+            XDFHook.logi(TAG, "always: reused existing button (ROM kept it)");
             return;
         }
 
@@ -316,7 +327,8 @@ final class ResolverAlwaysRestore {
         int onceId = resId(act, ID_BUTTON_ONCE, "id");
         View once = onceId != 0 ? bar.findViewById(onceId) : null;
 
-        Button btn = new Button(act);
+        // ② 本 ROM：布局里只有 button_once，必须插入；样式沿用 once 的 buttonBarButtonStyle
+        Button btn = newStyledButton(act);
         btn.setId(alwaysId);
         int textId = resId(act, STR_USE_ALWAYS, "string");
         if (textId == 0) {
@@ -348,6 +360,37 @@ final class ResolverAlwaysRestore {
         bar.addView(btn, newLp);
         XDFHook.logi(TAG, "always button: inserted (id=0x" + Integer.toHexString(alwaysId)
                 + ", weight=" + newLp.weight + ", enabled=" + btn.isEnabled() + ")");
+    }
+
+    /**
+     * 创建一个样式与 button_once 一致的 Button。
+     *
+     * <p>button_once 在布局里是 {@code style="?android:attr/buttonBarButtonStyle"}。
+     * 直接把该 attr 解析成 style 资源，再走 {@code Button(Context, AttributeSet, int, int)}
+     * 四参构造（API 21+）应用 —— 这样"始终"与"仅此一次"视觉完全一致。</p>
+     *
+     * <p>解析失败（定制主题没定义该 attr）时退回默认构造，不影响功能。</p>
+     */
+    private static Button newStyledButton(android.app.Activity act) {
+        int styleRes = 0;
+        try {
+            android.util.TypedValue tv = new android.util.TypedValue();
+            if (act.getTheme().resolveAttribute(
+                    android.R.attr.buttonBarButtonStyle, tv, true)) {
+                styleRes = tv.resourceId;
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            if (styleRes != 0) {
+                XDFHook.logd(TAG, "always: applying buttonBarButtonStyle 0x"
+                        + Integer.toHexString(styleRes));
+                return new Button(act, null, 0, styleRes);
+            }
+        } catch (Throwable t) {
+            XDFHook.logw(TAG, "always: styled ctor failed, fallback: " + t);
+        }
+        return new Button(act);
     }
 
     /**
