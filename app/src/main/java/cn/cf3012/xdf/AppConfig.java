@@ -146,6 +146,8 @@ public final class AppConfig {
     /** Zeus 设备信息冒充：仅影响 zeus 读取到的 model/sn */
     public static final String K_ZEUS_MODEL = "zeus_model";
     public static final String K_ZEUS_SN = "zeus_sn";
+    /** 弹窗文字修复的目标应用清单（逗号分隔包名，UI 页勾选维护，默认空） */
+    public static final String K_DIALOG_FIX_APPS = "dialogFixApps";
     /**
      * 强制注入（无视设备门禁的型号校验）。
      *
@@ -215,6 +217,13 @@ public final class AppConfig {
     public boolean hAppstoreSpoofEnv = true;       // 应用商店环境伪装
     public boolean hUpdaterSpoofEnv = true;        // 升级中心环境伪装
     public boolean hUpdaterGuard = true;           // 升级中心禁自动/静默/强制更新（UpdaterGuard）
+    /**
+     * 「弹窗文字修复」的目标应用清单（逗号分隔包名，默认空 = 不修复任何应用）。
+     *
+     * <p>由 UI「总览 → 弹窗文字修复」页勾选维护；{@link #isDialogFixTarget(String)}
+     * 用它决定本进程是否安装 DialogTextFixHooks。★ 默认空：不推荐、也不默认全量注入。</p>
+     */
+    public String dialogFixApps = "";
 
     public int logLevel = Log.INFO;
     public int inputMethodMode = 0; // 0=固化, 1=黑名单
@@ -813,6 +822,7 @@ public final class AppConfig {
             c.hAppstoreSpoofEnv = p.getBoolean(hookKey(SCOPE_APPSTORE, H_SPOOF_ENV), true);
             c.hUpdaterSpoofEnv = p.getBoolean(hookKey(SCOPE_UPDATER, H_SPOOF_ENV), true);
             c.hUpdaterGuard = p.getBoolean(hookKey(SCOPE_UPDATER, H_UPDATER_GUARD), true);
+            c.dialogFixApps = p.getString(K_DIALOG_FIX_APPS, "");
             // settings
             c.hSettingsUnlock = p.getBoolean(hookKey(SCOPE_SETTINGS, H_SETTINGS_UNLOCK), true);
             c.hSettingsLockUnlock = p.getBoolean(hookKey(SCOPE_SETTINGS, H_LOCK_UNLOCK), true);
@@ -1018,6 +1028,7 @@ public final class AppConfig {
             c.hAppstoreSpoofEnv = getP(p, hookKey(SCOPE_APPSTORE, H_SPOOF_ENV), true);
             c.hUpdaterSpoofEnv = getP(p, hookKey(SCOPE_UPDATER, H_SPOOF_ENV), true);
             c.hUpdaterGuard = getP(p, hookKey(SCOPE_UPDATER, H_UPDATER_GUARD), true);
+            c.dialogFixApps = p.getProperty(K_DIALOG_FIX_APPS, "");
             c.hSettingsUnlock = getP(p, hookKey(SCOPE_SETTINGS, H_SETTINGS_UNLOCK), true);
             c.hSettingsLockUnlock = getP(p, hookKey(SCOPE_SETTINGS, H_LOCK_UNLOCK), true);
             c.hSettingsGestureNav = getP(p, hookKey(SCOPE_SETTINGS, H_GESTURE_NAV), true);
@@ -1276,6 +1287,32 @@ public final class AppConfig {
     }
 
     /** 查询 scope 上是否启用某 hook 单元（UI/各进程通用） */
+    /**
+     * 本进程是否是「弹窗文字修复」的目标应用。
+     *
+     * <p>判据 = {@link #K_DIALOG_FIX_APPS} 清单里包含当前包名。清单由 UI
+     * 「总览 → 弹窗文字修复」页维护，<b>默认空</b>（即默认不注入任何 App，
+     * 不做"全量作用域"推荐）。</p>
+     *
+     * @param pkg 当前进程包名
+     * @return true = 需要安装 {@code DialogTextFixHooks}
+     */
+    public boolean isDialogFixTarget(String pkg) {
+        if (pkg == null || pkg.isEmpty()) {
+            return false;
+        }
+        String list = dialogFixApps;
+        if (list == null || list.isEmpty()) {
+            return false;
+        }
+        for (String s : list.split(",")) {
+            if (pkg.equals(s.trim())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     public boolean hookEnabled(String scope, String hook) {
         String k = hookKey(scope, hook);
         if (SCOPE_SYSTEM.equals(scope)) {
@@ -1346,6 +1383,8 @@ public final class AppConfig {
         switch (key) {
             case K_INPUT_METHOD_LIST:
                 return inputMethodList;
+            case K_DIALOG_FIX_APPS:
+                return dialogFixApps;
             default:
                 return def;
         }

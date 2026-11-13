@@ -48,6 +48,8 @@ import java.util.Set;
  *   android:ui            → SystemHooks → ResolverAlwaysRestore（「仅此一次」/「始终」
  *                                            按钮与 startSelected 分派恢复）
  *                            + ChooserClickRestore（ChooserActivity 图标点击监听）
+ *   <b>被选中的应用</b>     → DialogTextFixHooks（「总览 → 弹窗文字修复」勾选的目标应用；
+ *                            XDF 把 AlertDialog 背景写死纯白 → 深色主题 App 弹窗白底白字）
  *
  * 日志：logcat + /data/local/tmp/XDFHook.log 双写（FileLogger，五级 V/D/I/W/E，
  * 开机超 5MiB 自动清空，权限说明与 magiskpolicy 兜底命令见 FileLogger 头注释）。
@@ -492,6 +494,25 @@ public class XDFHook extends XposedModule {
         }
 
         // 分享面板修复已收敛到 PKG_ANDROID（android:ui 宿主进程），不再全进程注入。
+
+        // ★ 「弹窗文字修复」目标应用（DialogTextFixHooks）
+        //   根因：XDF 给 ThemeOverlay.Material.Dialog.Alert 加了一条 AOSP 没有的
+        //   <item name="android:windowBackground">@drawable/bg_white_rect_corner_16</item>
+        //   （纯白 + 16dp 圆角、无 inset）。而 alertDialogTheme 只是个 ThemeOverlay，
+        //   只覆盖背景、不带任何文字色 —— 文字仍从 Activity 主题继承。
+        //   于是深色主题 App（Theme.Material / Theme.DeviceDefault）的弹窗变成
+        //   「白底白字」：标题/正文/单选列表全部隐形（按钮走 colorAccent 反而正常）。
+        //
+        //   ★ 只对用户在「总览 → 弹窗文字修复」里勾选过的应用安装（清单默认空）：
+        //     不做全量注入；未命中时连日志都不打，避免每个 App 进程刷屏。
+        if (cfg.isDialogFixTarget(pkg)) {
+            runGuarded("DialogTextFixHooks", new HookInstall() {
+                @Override
+                public void run() throws Exception {
+                    DialogTextFixHooks.hookAll(cl, pkg);
+                }
+            });
+        }
 
         // 输入法保护：在所有进程中 hook Settings put（确保拦截所有调用）
         if (cfg.hSystemImeGuard) {

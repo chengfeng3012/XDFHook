@@ -37,14 +37,23 @@ import cn.cf3012.xdf.AppConfig
 import cn.cf3012.xdf.R
 import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Surface
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 
 /** 总览页：master 总闸 + per-scope 应用列表（点击进入该 scope 的功能详情） */
 @Composable
 fun OverviewScreen(tick: Int, context: Context) {
     var detail by remember { mutableStateOf<String?>(null) }
+    // 弹窗文字修复页（总览列表的第一个入口）
+    var dialogFix by remember { mutableStateOf(false) }
     val current = detail
-    if (current != null) {
+    if (dialogFix) {
+        DialogFixScreen(
+            tick = tick,
+            context = context,
+            onBack = { dialogFix = false },
+        )
+    } else if (current != null) {
         ScopeDetailScreen(
             scope = current,
             onBack = { detail = null },
@@ -52,7 +61,12 @@ fun OverviewScreen(tick: Int, context: Context) {
             context = context,
         )
     } else {
-        ScopeListScreen(tick = tick, context = context, onOpen = { detail = it })
+        ScopeListScreen(
+            tick = tick,
+            context = context,
+            onOpen = { detail = it },
+            onOpenDialogFix = { dialogFix = true },
+        )
     }
 }
 
@@ -71,7 +85,12 @@ private val SCOPE_ORDER = listOf(
 )
 
 @Composable
-fun ScopeListScreen(tick: Int, context: Context, onOpen: (String) -> Unit) {
+fun ScopeListScreen(
+    tick: Int,
+    context: Context,
+    onOpen: (String) -> Unit,
+    onOpenDialogFix: () -> Unit,
+) {
     // 本地刷新 tick：写配置 / 改 scope 后自增，避免受控开关被旧值弹回
     var cfgTick by remember { mutableStateOf(tick) }
     var scopeTick by remember { mutableStateOf(tick) }
@@ -97,6 +116,17 @@ fun ScopeListScreen(tick: Int, context: Context, onOpen: (String) -> Unit) {
                 },
                 title = stringResource(R.string.master_title),
                 summary = stringResource(R.string.master_subtitle),
+            )
+        }
+        // ★ 第一个入口：弹窗文字修复（用户自己选要修哪些 App；默认不选 = 不注入任何 App）
+        item {
+            val raw = cfg.dialogFixApps
+            val n = if (raw.isNullOrBlank()) 0 else raw.split(",").count { it.isNotBlank() }
+            ArrowPreference(
+                title = "弹窗文字修复",
+                summary = if (n == 0) "未选择应用 —— 深色主题应用的弹窗会白底白字"
+                else "已选择 $n 个应用",
+                onClick = onOpenDialogFix,
             )
         }
         item {
