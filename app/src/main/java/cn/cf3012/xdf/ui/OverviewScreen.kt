@@ -70,7 +70,7 @@ fun OverviewScreen(tick: Int, context: Context) {
     }
 }
 
-/** scope 列表（10 个固定条目：2 框架 + 6 业务包 + 2 环境伪装目标） */
+/** scope 列表（11 个固定条目：2 框架 + 7 业务包 + 2 环境伪装目标） */
 private val SCOPE_ORDER = listOf(
     AppConfig.SCOPE_SYSTEM,
     AppConfig.SCOPE_ANDROID,
@@ -79,6 +79,7 @@ private val SCOPE_ORDER = listOf(
     AppConfig.SCOPE_SETTINGS,
     AppConfig.SCOPE_LAUNCHER,
     AppConfig.SCOPE_GALLERY,
+    AppConfig.SCOPE_MEDIAPROVIDER,
     AppConfig.SCOPE_PACKAGE_INSTALLER,
     AppConfig.SCOPE_APPSTORE,
     AppConfig.SCOPE_UPDATER,
@@ -276,6 +277,7 @@ internal fun scopeName(scope: String): String = when (scope) {
     AppConfig.SCOPE_GALLERY -> "相册"
     AppConfig.SCOPE_PACKAGE_INSTALLER -> "应用安装器"
     AppConfig.SCOPE_SYSTEMUI -> "系统UI"
+    AppConfig.SCOPE_MEDIAPROVIDER -> "媒体库"
     AppConfig.SCOPE_APPSTORE -> "应用商店"
     AppConfig.SCOPE_UPDATER -> "升级中心"
     else -> scope

@@ -1,6 +1,7 @@
 system
 android
 com.android.systemui
+com.android.providers.media
 cn.xdf.zeus
 com.android.settings
 com.android.launcher3

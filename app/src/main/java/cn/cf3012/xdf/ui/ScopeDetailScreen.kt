@@ -61,6 +61,9 @@ private val NEEDS_RESTART_ON_ENABLE = setOf(
     AppConfig.hookKey(AppConfig.SCOPE_ZEUS, AppConfig.H_SPOOF_ENV),
     AppConfig.hookKey(AppConfig.SCOPE_APPSTORE, AppConfig.H_SPOOF_ENV),
     AppConfig.hookKey(AppConfig.SCOPE_UPDATER, AppConfig.H_SPOOF_ENV),
+    // 媒体库补全：hook 在 onPackageReady 一次性安装，开启后需重启媒体库进程
+    AppConfig.hookKey(AppConfig.SCOPE_MEDIAPROVIDER, AppConfig.H_MEDIA_META_FIX),
+    AppConfig.hookKey(AppConfig.SCOPE_MEDIAPROVIDER, AppConfig.H_MEDIA_META_BACKFILL),
 )
 
 
@@ -124,6 +127,14 @@ private fun hooksFor(scope: String): List<HookDef> = when (scope) {
     AppConfig.SCOPE_GALLERY -> listOf(
         HookDef(AppConfig.H_GALLERY_EDIT, "图片编辑", "恢复相册的编辑入口",
             { it.hGalleryEdit }),
+    )
+    AppConfig.SCOPE_MEDIAPROVIDER -> listOf(
+        HookDef(AppConfig.H_MEDIA_META_FIX, "媒体库元数据补全",
+            "新截图写入时补上大小与宽高（QQ 相册按 1000 字节过滤，缺 size 就看不到刚截的图）",
+            { it.hMediaMetaFix }),
+        HookDef(AppConfig.H_MEDIA_META_BACKFILL, "存量数据补全",
+            "媒体库进程启动后补齐已有缺失项（图片每轮最多 2000 行；改完需结束该进程再生效）",
+            { it.hMediaMetaBackfill }),
     )
     AppConfig.SCOPE_PACKAGE_INSTALLER -> listOf(
         HookDef(AppConfig.H_INSTALL_UNLOCK, "自由安装", "允许安装任意来源的应用",

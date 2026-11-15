@@ -1,15 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 三个旧模块 scope 的并集：
-         XposedModule(android/systemui/launcher3)
-         + XdfSettingsHook(android/com.android.settings/cn.xdf.zeus)
-         + GalleryHook(com.android.gallery3d) -->
+    <!-- LSPosed 推荐作用域（历史数组，保留与 scope.list 同步）：
+         当前等于 AppConfig 里登记的全部 scope ——
+         system / android / systemui / mediaprovider / zeus / settings /
+         launcher3 / gallery3d / packageinstaller / appstore / updater -->
     <string-array name="xposed_scope">
+        <item>system</item>
         <item>android</item>
         <item>com.android.settings</item>
         <item>cn.xdf.zeus</item>
         <item>com.android.launcher3</item>
         <item>com.android.systemui</item>
+        <item>com.android.providers.media</item>
         <item>com.android.gallery3d</item>
+        <item>com.android.packageinstaller</item>
+        <item>cn.xdf.appstore</item>
+        <item>cn.xdf.updater</item>
     </string-array>
 </resources>

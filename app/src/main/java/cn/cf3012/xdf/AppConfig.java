@@ -58,6 +58,13 @@ public final class AppConfig {
     public static final String SCOPE_GALLERY = "com.android.gallery3d";
     public static final String SCOPE_PACKAGE_INSTALLER = "com.android.packageinstaller";
     public static final String SCOPE_SYSTEMUI = "com.android.systemui";
+    /**
+     * 媒体库（进程 android.process.media）：补全媒体行的 _size / width / height。
+     *
+     * <p>截图走 pending API 但没有发布扫描 → _size/宽高永远是 NULL，
+     * 而 QQ 相册按 1000 字节门槛过滤 → 刚截的图看不到。见 {@link MediaMetaFixHooks}。</p>
+     */
+    public static final String SCOPE_MEDIAPROVIDER = "com.android.providers.media";
     /** XDF 应用商店（BaseUrlKt.BASE_URL 仅由 isDebugOs 决定 → 会切测试域） */
     public static final String SCOPE_APPSTORE = "cn.xdf.appstore";
     /** XDF 升级中心（Device.debug = !Build.IS_USER，static final 在 <clinit> 固化） */
@@ -86,6 +93,10 @@ public final class AppConfig {
     public static final String H_GESTURE_NAV = "gestureNavFix"; // 手势导航保持（systemui/settings）
     public static final String H_POWER_KEY_FIX = "powerKeyFix"; // 电源键/自动息屏失效修复（system）
     public static final String H_SPOOF_ENV = "spoofEnv";   // 生产环境伪装（Build.TYPE/IS_USER）
+    /** 媒体库补全（mediaprovider）：新写入/发布的行补 _size + width/height */
+    public static final String H_MEDIA_META_FIX = "mediaMetaFix";
+    /** 媒体库存量补全（mediaprovider）：进程启动后一次性扫描已有缺失行 */
+    public static final String H_MEDIA_META_BACKFILL = "mediaMetaBackfill";
 
     /** scope hook 单元的配置键名 */
     public static String hookKey(String scope, String hook) {
@@ -212,6 +223,9 @@ public final class AppConfig {
     // systemui
     public boolean hSystemuiQsFix = true;          // 控制中心修复
     public boolean hSystemuiGestureNav = true;     // 手势导航防复位（GestureNavFix B1+B3）
+    // mediaprovider（媒体库元数据补全）
+    public boolean hMediaMetaFix = true;           // 新行的 _size/宽高补全（insert/publish 时机）
+    public boolean hMediaMetaBackfill = true;      // 存量缺失行补全（进程启动后一次性）
     // 生产环境伪装（BuildSpoofHooks）
     public boolean hZeusSpoofEnv = true;           // zeus 环境伪装
     public boolean hAppstoreSpoofEnv = true;       // 应用商店环境伪装
@@ -837,6 +851,10 @@ public final class AppConfig {
             // systemui
             c.hSystemuiQsFix = p.getBoolean(hookKey(SCOPE_SYSTEMUI, H_QS_FIX), true);
             c.hSystemuiGestureNav = p.getBoolean(hookKey(SCOPE_SYSTEMUI, H_GESTURE_NAV), true);
+            // mediaprovider（媒体库元数据补全）
+            c.hMediaMetaFix = p.getBoolean(hookKey(SCOPE_MEDIAPROVIDER, H_MEDIA_META_FIX), true);
+            c.hMediaMetaBackfill = p.getBoolean(
+                    hookKey(SCOPE_MEDIAPROVIDER, H_MEDIA_META_BACKFILL), true);
             c.logLevel = clampLevel(p.getInt(K_LOG_LEVEL, Log.INFO));
             c.inputMethodMode = clampInputMethodMode(p.getInt(K_INPUT_METHOD_MODE, 0));
             c.inputMethodList = p.getString(K_INPUT_METHOD_LIST, "");
@@ -1038,6 +1056,9 @@ public final class AppConfig {
             c.hInstallUnlock = getP(p, hookKey(SCOPE_PACKAGE_INSTALLER, H_INSTALL_UNLOCK), true);
             c.hSystemuiQsFix = getP(p, hookKey(SCOPE_SYSTEMUI, H_QS_FIX), true);
             c.hSystemuiGestureNav = getP(p, hookKey(SCOPE_SYSTEMUI, H_GESTURE_NAV), true);
+            c.hMediaMetaFix = getP(p, hookKey(SCOPE_MEDIAPROVIDER, H_MEDIA_META_FIX), true);
+            c.hMediaMetaBackfill = getP(p,
+                    hookKey(SCOPE_MEDIAPROVIDER, H_MEDIA_META_BACKFILL), true);
             c.logLevel = clampLevel(getI(p, K_LOG_LEVEL, Log.INFO));
             c.inputMethodMode = clampInputMethodMode(getI(p, K_INPUT_METHOD_MODE, 0));
             c.inputMethodList = p.getProperty(K_INPUT_METHOD_LIST, "");
@@ -1345,6 +1366,9 @@ public final class AppConfig {
         } else if (SCOPE_SYSTEMUI.equals(scope)) {
             if (H_QS_FIX.equals(hook)) return hSystemuiQsFix;
             if (H_GESTURE_NAV.equals(hook)) return hSystemuiGestureNav;
+        } else if (SCOPE_MEDIAPROVIDER.equals(scope)) {
+            if (H_MEDIA_META_FIX.equals(hook)) return hMediaMetaFix;
+            if (H_MEDIA_META_BACKFILL.equals(hook)) return hMediaMetaBackfill;
         } else if (SCOPE_APPSTORE.equals(scope)) {
             if (H_SPOOF_ENV.equals(hook)) return hAppstoreSpoofEnv;
         } else if (SCOPE_UPDATER.equals(scope)) {

@@ -45,6 +45,10 @@ import java.util.Set;
  *   cn.xdf.zeus           → BuildSpoofHooks（同上：BaseUrlHelper 三 host）+ 见上
  *   com.android.systemui  → QuickSettingsHooks（控制中心修复）
  *                            + GestureNavHooks.hookSystemUi（手势导航防复位 B1+B3）
+ *   com.android.providers.media
+ *                          → MediaMetaFixHooks（媒体库补全 _size/width/height：
+ *                            截图 pending 行无发布扫描 → 行 _size=NULL，
+ *                            QQ 相册按 1000 字节门槛把它当空图丢弃）
  *   android:ui            → SystemHooks → ResolverAlwaysRestore（「仅此一次」/「始终」
  *                                            按钮与 startSelected 分派恢复）
  *                            + ChooserClickRestore（ChooserActivity 图标点击监听）
@@ -78,6 +82,15 @@ public class XDFHook extends XposedModule {
     public static final String PKG_APPSTORE = "cn.xdf.appstore";
     /** XDF 升级中心（Device.debug = !Build.IS_USER → 需环境伪装） */
     public static final String PKG_UPDATER = "cn.xdf.updater";
+    /**
+     * 媒体库（进程 android.process.media）。
+     *
+     * <p>补全媒体行的 _size / width / height：本机 SystemUI 截图走
+     * {@code MediaStore.createPending/publish}，而 MediaProvider 没有发布扫描
+     * （sdcardfs 也没有 FuseDaemon）→ 行永远 {@code _size=NULL}，
+     * QQ 相册的 1000 字节门槛把它当 0 字节图丢弃。见 {@link MediaMetaFixHooks}。</p>
+     */
+    public static final String PKG_MEDIA_PROVIDER = "com.android.providers.media";
 
     /** 模块接口实例（XposedModule 实例即 XposedInterface），各子模块静态使用 */
     private static volatile XposedInterface sApi;
@@ -433,6 +446,25 @@ public class XDFHook extends XposedModule {
                     });
                 } else {
                     logi(TAG, "gesture nav reset guard disabled, skip");
+                }
+                break;
+            case PKG_MEDIA_PROVIDER:
+                // 媒体库（进程 android.process.media）：补全 _size / width / height。
+                //   根因：截图走 MediaStore.createPending/publish，本机 MediaProvider 无发布扫描
+                //   （sdcardfs，也没有 FuseDaemon）→ 行永远 _size=NULL + 宽高 NULL；
+                //   QQ 相册 MediaFileFilter.imageMinSize=1000 把 NULL 当 0 字节图丢弃。
+                // 注意：此进程非 system_server，kill android.process.media 重开即生效。
+                if (cfg.hookEnabled(AppConfig.SCOPE_MEDIAPROVIDER, AppConfig.H_MEDIA_META_FIX)
+                        || cfg.hookEnabled(AppConfig.SCOPE_MEDIAPROVIDER,
+                                AppConfig.H_MEDIA_META_BACKFILL)) {
+                    runGuarded("MediaMetaFixHooks", new HookInstall() {
+                        @Override
+                        public void run() throws Exception {
+                            MediaMetaFixHooks.hookAll(cl);
+                        }
+                    });
+                } else {
+                    logi(TAG, "media meta fix disabled, skip");
                 }
                 break;
             case PKG_ANDROID:
